@@ -8,8 +8,28 @@ const { authenticateUser } = require("../middleware/auth");
 const optionalAuth = require("../middleware/optionalAuth");
 const { sendPasswordResetEmail } = require("../utils/emailService");
 const { sendPasswordResetEmailProduction } = require("../utils/emailServiceProduction");
+const { sendPasswordResetEmailAlternative } = require("../utils/emailServiceAlternative");
+const nodemailer = require("nodemailer");
 
 const router = express.Router();
+
+// Use the same working email configuration as bookings.js
+const transporter = nodemailer.createTransport({
+  service:"Gmail", // Use environment variable or default to gmail
+  auth: {
+    user: process.env.EMAIL_USER, // Your email address
+    pass: process.env.EMAIL_PASSWORD, // Your email password or app password
+  },
+  // Add additional security options for Gmail
+  secure: true, // Use SSL
+  tls: {
+    // Do not fail on invalid certs
+    rejectUnauthorized: false
+  },
+  // Debug options - uncomment if needed to troubleshoot
+  // debug: true,
+  // logger: true
+});
 
 const validRoles = ["Teacher", "Lab Assistant", "HOD", "Admin"];
 const isHOD = (role) => role === "HOD";
@@ -213,20 +233,80 @@ router.post("/forgot-password", async (req, res) => {
     user.resetPasswordExpires = new Date(resetTokenExpiry);
     await user.save();
 
-    // Send password reset email (use production service in production)
-    const emailFunction = process.env.NODE_ENV === 'production' 
-      ? sendPasswordResetEmailProduction 
-      : sendPasswordResetEmail;
-    
-    const emailResult = await emailFunction(email, resetToken, user.name);
-    
-    if (emailResult.success) {
+    // Send password reset email using the same working transporter as bookings
+    try {
+      // Verify transporter connection before sending (same as bookings.js)
+      await transporter.verify();
+      
+      const resetLink = `${process.env.FRONTEND_URL || 'https://bookingsystem-bay.vercel.app'}/reset-password?token=${resetToken}`;
+      
+      const mailOptions = {
+        from: `"DJSCE IT Department" <${process.env.EMAIL_USER}>`, // Formatted sender name
+        to: email,
+        subject: 'Password Reset Request - DJSCE IT Department',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background-color: #2c3e50; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; font-size: 24px;">DJSCE IT Department</h1>
+              <p style="margin: 5px 0 0 0; font-size: 16px;">Password Reset Request</p>
+            </div>
+            
+            <div style="background-color: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #e0e0e0;">
+              <h2 style="color: #2c3e50; margin-top: 0;">Hello ${user.name},</h2>
+              
+              <p style="color: #555; line-height: 1.6; font-size: 16px;">
+                We received a request to reset your password for your DJSCE IT Department account.
+              </p>
+              
+              <p style="color: #555; line-height: 1.6; font-size: 16px;">
+                Click the button below to reset your password:
+              </p>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetLink}" 
+                   style="background-color: #2c3e50; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold; display: inline-block;">
+                  Reset Password
+                </a>
+              </div>
+              
+              <p style="color: #777; font-size: 14px; line-height: 1.5;">
+                If the button doesn't work, you can copy and paste this link into your browser:
+              </p>
+              <p style="color: #2c3e50; font-size: 14px; word-break: break-all; background-color: #f0f0f0; padding: 10px; border-radius: 4px;">
+                ${resetLink}
+              </p>
+              
+              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 4px; margin: 20px 0;">
+                <p style="color: #856404; margin: 0; font-size: 14px;">
+                  <strong>Important:</strong> This link will expire in 1 hour for security reasons.
+                </p>
+              </div>
+              
+              <p style="color: #777; font-size: 14px; line-height: 1.5;">
+                If you didn't request this password reset, please ignore this email. Your password will remain unchanged.
+              </p>
+              
+              <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
+              
+              <p style="color: #999; font-size: 12px; text-align: center; margin: 0;">
+                This email was sent from DJSCE IT Department Booking System.<br>
+                Please do not reply to this email.
+              </p>
+            </div>
+          </div>
+        `
+      };
+      
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`✉️ Password reset email sent to ${email} [${info.messageId}]`);
+      
       res.status(200).json({ 
         message: "Password reset link has been sent to your email address",
         expiresIn: "1 hour"
       });
-    } else {
-      console.error("Email sending failed:", emailResult.error);
+      
+    } catch (emailError) {
+      console.error("📮 Error sending password reset email:", emailError);
       res.status(500).json({ 
         error: "Failed to send password reset email. Please try again later.",
         // In development, you might want to return the token for testing

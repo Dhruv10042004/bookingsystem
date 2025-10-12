@@ -3,28 +3,34 @@ const nodemailer = require('nodemailer');
 // Production-optimized email service for cloud platforms like Render
 const createProductionTransporter = () => {
   return nodemailer.createTransport({
-    service: "Gmail",
+    // Use direct SMTP configuration instead of service
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // Use STARTTLS
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD,
     },
     // Production-optimized settings for cloud platforms
-    secure: true,
     tls: {
-      rejectUnauthorized: false
+      rejectUnauthorized: false,
+      ciphers: 'SSLv3'
     },
     // Extended timeouts for cloud environments
-    connectionTimeout: 120000, // 2 minutes
-    greetingTimeout: 60000, // 1 minute
-    socketTimeout: 120000, // 2 minutes
+    connectionTimeout: 30000, // 30 seconds
+    greetingTimeout: 15000, // 15 seconds
+    socketTimeout: 30000, // 30 seconds
+    // Connection settings for Render
+    requireTLS: true,
+    ignoreTLS: false,
     // Pool settings for better connection management
-    pool: true,
+    pool: false, // Disable pooling for Render
     maxConnections: 1,
-    maxMessages: 3,
-    rateLimit: 14, // 14 emails per minute (Gmail limit)
+    maxMessages: 1,
+    rateLimit: 5, // Reduced rate limit for cloud platforms
     // Debug for production troubleshooting
-    debug: process.env.NODE_ENV === 'development',
-    logger: process.env.NODE_ENV === 'development'
+    debug: false,
+    logger: false
   });
 };
 
@@ -40,7 +46,8 @@ const sendPasswordResetEmailProduction = async (email, resetToken, userName) => 
       const transporter = createProductionTransporter();
       
       // Skip verification in production to avoid timeout issues
-      // await transporter.verify();
+      // Gmail SMTP verification often fails on cloud platforms
+      console.log(`📮 Skipping email verification for production environment`);
       
       const resetLink = `${process.env.FRONTEND_URL || 'https://bookingsystem-bay.vercel.app'}/reset-password?token=${resetToken}`;
       

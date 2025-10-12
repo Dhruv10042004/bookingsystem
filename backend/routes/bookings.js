@@ -7,19 +7,22 @@ const router = express.Router();
 const { authenticateUser, authorizeRole } = require("../middleware/auth");
 const nodemailer = require("nodemailer");
 dotenv.config();
-// Configure nodemailer transporter
+// Configure nodemailer transporter for Render (Gmail SMTP)
 const transporter = nodemailer.createTransport({
-  service:"Gmail", // Use environment variable or default to gmail
+  host: 'smtp.gmail.com',
+  port: 587, // Use port 587 (TLS) - allowed on Render
+  secure: false, // Use TLS, not SSL
   auth: {
-    user: process.env.EMAIL_USER, // Your email address
-    pass: process.env.EMAIL_PASSWORD, // Your email password or app password
+    user: process.env.EMAIL_USER, // Your Gmail address
+    pass: process.env.EMAIL_PASSWORD, // Gmail App Password (not regular password)
   },
-  // Add additional security options for Gmail
-  secure: true, // Use SSL
   tls: {
-    // Do not fail on invalid certs
     rejectUnauthorized: false
   },
+  // Connection settings for Render
+  connectionTimeout: 60000, // 60 seconds
+  greetingTimeout: 30000, // 30 seconds
+  socketTimeout: 60000, // 60 seconds
   // Debug options - uncomment if needed to troubleshoot
   // debug: true,
   // logger: true

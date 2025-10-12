@@ -33,8 +33,8 @@ function LabAssistantDashboard() {
   const [editEntries, setEditEntries] = useState({});
   const navigate = useNavigate();
   // const API=import.meta.env.REACT_APP_API_URL;
-  const API="https://bookingsystem-e4oz.onrender.com/api"
-  // const API="http://localhost:5000/api"
+  // const API="https://bookingsystem-e4oz.onrender.com/api"
+  const API="http://localhost:5000/api"
   // Fetch rooms on load
   useEffect(() => {
     axios.get(`${API}/rooms`)

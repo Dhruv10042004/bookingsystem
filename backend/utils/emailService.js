@@ -14,6 +14,10 @@ const createTransporter = () => {
       // Do not fail on invalid certs
       rejectUnauthorized: false
     },
+    // Connection timeout settings for cloud platforms
+    connectionTimeout: 60000, // 60 seconds
+    greetingTimeout: 30000, // 30 seconds
+    socketTimeout: 60000, // 60 seconds
     // Debug options - uncomment if needed to troubleshoot
     // debug: true,
     // logger: true
@@ -25,8 +29,26 @@ const sendPasswordResetEmail = async (email, resetToken, userName) => {
   try {
     const transporter = createTransporter();
     
-    // Verify transporter connection before sending
-    await transporter.verify();
+    // Verify transporter connection before sending with retry logic
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        await transporter.verify();
+        break; // Success, exit retry loop
+      } catch (verifyError) {
+        retryCount++;
+        console.log(`📮 Email verification attempt ${retryCount}/${maxRetries} failed:`, verifyError.message);
+        
+        if (retryCount >= maxRetries) {
+          throw verifyError; // Re-throw if all retries failed
+        }
+        
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+      }
+    }
     
     // Create reset link (you'll need to update this with your frontend URL)
     const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
@@ -88,9 +110,27 @@ const sendPasswordResetEmail = async (email, resetToken, userName) => {
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Password reset email sent to ${email} [${info.messageId}]`);
-    return { success: true, messageId: info.messageId };
+    // Send email with retry logic
+    let sendRetryCount = 0;
+    const maxSendRetries = 3;
+    
+    while (sendRetryCount < maxSendRetries) {
+      try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`✉️ Password reset email sent to ${email} [${info.messageId}]`);
+        return { success: true, messageId: info.messageId };
+      } catch (sendError) {
+        sendRetryCount++;
+        console.log(`📮 Email send attempt ${sendRetryCount}/${maxSendRetries} failed:`, sendError.message);
+        
+        if (sendRetryCount >= maxSendRetries) {
+          throw sendError; // Re-throw if all retries failed
+        }
+        
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, 2000 * sendRetryCount));
+      }
+    }
     
   } catch (error) {
     console.error("📮 Error sending password reset email:", error);

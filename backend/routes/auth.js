@@ -7,6 +7,7 @@ const Faculty = require("../models/Falculty");
 const { authenticateUser } = require("../middleware/auth");
 const optionalAuth = require("../middleware/optionalAuth");
 const { sendPasswordResetEmail } = require("../utils/emailService");
+const { sendPasswordResetEmailProduction } = require("../utils/emailServiceProduction");
 
 const router = express.Router();
 
@@ -212,8 +213,12 @@ router.post("/forgot-password", async (req, res) => {
     user.resetPasswordExpires = new Date(resetTokenExpiry);
     await user.save();
 
-    // Send password reset email
-    const emailResult = await sendPasswordResetEmail(email, resetToken, user.name);
+    // Send password reset email (use production service in production)
+    const emailFunction = process.env.NODE_ENV === 'production' 
+      ? sendPasswordResetEmailProduction 
+      : sendPasswordResetEmail;
+    
+    const emailResult = await emailFunction(email, resetToken, user.name);
     
     if (emailResult.success) {
       res.status(200).json({ 

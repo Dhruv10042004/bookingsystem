@@ -26,7 +26,15 @@ router.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
-
+// Add this RIGHT at the top after your requires
+console.log('=== ENVIRONMENT VARIABLES DEBUG ===');
+console.log('EMAIL_USER:', process.env.EMAIL_USER);
+console.log('EMAIL_USER type:', typeof process.env.EMAIL_USER);
+console.log('EMAIL_USER length:', process.env.EMAIL_USER?.length);
+console.log('EMAIL_PASSWORD:', process.env.EMAIL_PASSWORD ? '***' + process.env.EMAIL_PASSWORD.slice(-4) : 'MISSING');
+console.log('EMAIL_PASSWORD type:', typeof process.env.EMAIL_PASSWORD);
+console.log('EMAIL_PASSWORD length:', process.env.EMAIL_PASSWORD?.length);
+console.log('===================================');
 // Use Gmail SMTP configuration for Render (try port 465 SSL)
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',

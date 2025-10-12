@@ -1,3 +1,10 @@
+require('dotenv').config();
+
+// Now add debug to verify it loaded
+console.log('🔍 Environment Variables Loaded:');
+console.log('EMAIL_USER:', process.env.EMAIL_USER);
+console.log('EMAIL_PASSWORD exists:', !!process.env.EMAIL_PASSWORD);
+console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");

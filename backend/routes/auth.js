@@ -27,11 +27,11 @@ router.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
 
-// Use Gmail SMTP configuration for Render (same as bookings.js)
+// Use Gmail SMTP configuration for Render (try port 465 SSL)
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587, // Use port 587 (TLS) - allowed on Render
-  secure: false, // Use TLS, not SSL
+  port: 465, // Use port 465 (SSL) - alternative to 587
+  secure: true, // Use SSL instead of TLS
   auth: {
     user: process.env.EMAIL_USER, // Your Gmail address
     pass: process.env.EMAIL_PASSWORD, // Gmail App Password (not regular password)
@@ -40,9 +40,9 @@ const transporter = nodemailer.createTransport({
     rejectUnauthorized: false
   },
   // Connection settings for Render
-  connectionTimeout: 60000, // 60 seconds
-  greetingTimeout: 30000, // 30 seconds
-  socketTimeout: 60000, // 60 seconds
+  connectionTimeout: 30000, // 30 seconds
+  greetingTimeout: 15000, // 15 seconds
+  socketTimeout: 30000, // 30 seconds
   // Debug options - uncomment if needed to troubleshoot
   // debug: true,
   // logger: true
@@ -259,10 +259,8 @@ router.post("/forgot-password", async (req, res) => {
         EMAIL_PASSWORD: process.env.EMAIL_PASSWORD ? "✅ Set" : "❌ Missing"
       });
       
-      // Verify transporter connection before sending (same as bookings.js)
-      console.log("📮 Verifying Gmail SMTP connection...");
-      await transporter.verify();
-      console.log("📮 Gmail SMTP connection verified successfully!");
+      // Skip verification to avoid timeout on Render
+      console.log("📮 Skipping Gmail connection verification for Render compatibility...");
       
       const resetLink = `${process.env.FRONTEND_URL || 'https://bookingsystem-bay.vercel.app'}/reset-password?token=${resetToken}`;
       

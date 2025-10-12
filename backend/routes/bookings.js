@@ -10,8 +10,8 @@ dotenv.config();
 // Configure nodemailer transporter for Render (Gmail SMTP)
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587, // Use port 587 (TLS) - allowed on Render
-  secure: false, // Use TLS, not SSL
+  port: 465, // Use port 465 (SSL) - alternative to 587
+  secure: true, // Use SSL instead of TLS
   auth: {
     user: process.env.EMAIL_USER, // Your Gmail address
     pass: process.env.EMAIL_PASSWORD, // Gmail App Password (not regular password)
@@ -20,9 +20,9 @@ const transporter = nodemailer.createTransport({
     rejectUnauthorized: false
   },
   // Connection settings for Render
-  connectionTimeout: 60000, // 60 seconds
-  greetingTimeout: 30000, // 30 seconds
-  socketTimeout: 60000, // 60 seconds
+  connectionTimeout: 30000, // 30 seconds
+  greetingTimeout: 15000, // 15 seconds
+  socketTimeout: 30000, // 30 seconds
   // Debug options - uncomment if needed to troubleshoot
   // debug: true,
   // logger: true
@@ -31,8 +31,8 @@ const transporter = nodemailer.createTransport({
 // Helper function to send email notifications with better error handling
 async function sendEmailNotification(toEmail, subject, message) {
   try {
-    // Verify transporter connection before sending
-    await transporter.verify();
+    // Skip verification to avoid timeout on Render
+    console.log("📮 Skipping Gmail connection verification for Render compatibility...");
     
     const mailOptions = {
       from: `"Room Booking System" <${process.env.EMAIL_USER}>`, // Formatted sender name

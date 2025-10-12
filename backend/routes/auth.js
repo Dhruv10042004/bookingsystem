@@ -40,10 +40,6 @@ const transporter = nodemailer.createTransport({
     // Do not fail on invalid certs
     rejectUnauthorized: false
   },
-  // Add connection timeout for Render (same as working notifications)
-  connectionTimeout: 10000, // 10 seconds
-  greetingTimeout: 5000, // 5 seconds
-  socketTimeout: 10000, // 10 seconds
   // Debug options - uncomment if needed to troubleshoot
   // debug: true,
   // logger: true
@@ -260,10 +256,9 @@ router.post("/forgot-password", async (req, res) => {
         EMAIL_PASSWORD: process.env.EMAIL_PASSWORD ? "✅ Set" : "❌ Missing"
       });
       
-      // Verify transporter connection before sending (same as bookings.js)
-      console.log("📮 Verifying Gmail connection...");
-      await transporter.verify();
-      console.log("📮 Gmail connection verified successfully!");
+      // Skip verification to avoid timeout issues on Render
+      // (Your notification emails work without verification)
+      console.log("📮 Skipping Gmail connection verification for Render compatibility...");
       
       const resetLink = `${process.env.FRONTEND_URL || 'https://bookingsystem-bay.vercel.app'}/reset-password?token=${resetToken}`;
       
@@ -334,6 +329,16 @@ router.post("/forgot-password", async (req, res) => {
       
     } catch (emailError) {
       console.error("📮 Error sending password reset email:", emailError);
+      
+      // Provide more detailed error information (same as bookings.js)
+      if (emailError.code === 'EAUTH') {
+        console.error("❌ Authentication failed: Check your email credentials");
+      } else if (emailError.code === 'ESOCKET') {
+        console.error("❌ Network error: Check your internet connection");
+      } else if (emailError.code === 'ETIMEDOUT') {
+        console.error("❌ Connection timeout: Gmail SMTP server is not responding");
+      }
+      
       res.status(500).json({ 
         error: "Failed to send password reset email. Please try again later.",
         // In development, you might want to return the token for testing

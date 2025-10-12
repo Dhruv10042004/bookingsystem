@@ -14,7 +14,7 @@ const nodemailer = require("nodemailer");
 
 const router = express.Router();
 
-// Use the same working email configuration as bookings.js
+// Use the EXACT same working email configuration as bookings.js
 const transporter = nodemailer.createTransport({
   service:"Gmail", // Use environment variable or default to gmail
   auth: {
@@ -27,6 +27,10 @@ const transporter = nodemailer.createTransport({
     // Do not fail on invalid certs
     rejectUnauthorized: false
   },
+  // Add connection timeout for Render (same as working notifications)
+  connectionTimeout: 10000, // 10 seconds
+  greetingTimeout: 5000, // 5 seconds
+  socketTimeout: 10000, // 10 seconds
   // Debug options - uncomment if needed to troubleshoot
   // debug: true,
   // logger: true
@@ -238,15 +242,23 @@ router.post("/forgot-password", async (req, res) => {
     try {
       let emailResult;
       
-      if (process.env.NODE_ENV === 'production' && process.env.SENDGRID_API_KEY) {
+      if (process.env.NODE_ENV === 'production') {
         // Use SendGrid for production (works on Render)
         console.log("📮 Using SendGrid for production email...");
         emailResult = await sendPasswordResetEmailSendGrid(email, resetToken, user.name);
       } else {
         // Use Gmail for localhost/development
         console.log("📮 Using Gmail for localhost email...");
+        console.log("📮 Environment check:", {
+          NODE_ENV: process.env.NODE_ENV,
+          EMAIL_USER: process.env.EMAIL_USER ? "✅ Set" : "❌ Missing",
+          EMAIL_PASSWORD: process.env.EMAIL_PASSWORD ? "✅ Set" : "❌ Missing"
+        });
+        
         // Verify transporter connection before sending (same as bookings.js)
+        console.log("📮 Verifying Gmail connection...");
         await transporter.verify();
+        console.log("📮 Gmail connection verified successfully!");
         
         const resetLink = `${process.env.FRONTEND_URL || 'https://bookingsystem-bay.vercel.app'}/reset-password?token=${resetToken}`;
         

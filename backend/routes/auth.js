@@ -238,100 +238,86 @@ router.post("/forgot-password", async (req, res) => {
     user.resetPasswordExpires = new Date(resetTokenExpiry);
     await user.save();
 
-    // Send password reset email - use SendGrid for production (Render), Gmail for localhost
+    // Send password reset email using Gmail (same as working notification emails)
     try {
-      let emailResult;
+      console.log("📮 Using Gmail for password reset email (same as notification emails)...");
+      console.log("📮 Environment check:", {
+        NODE_ENV: process.env.NODE_ENV,
+        EMAIL_USER: process.env.EMAIL_USER ? "✅ Set" : "❌ Missing",
+        EMAIL_PASSWORD: process.env.EMAIL_PASSWORD ? "✅ Set" : "❌ Missing"
+      });
       
-      if (process.env.NODE_ENV === 'production') {
-        // Use SendGrid for production (works on Render)
-        console.log("📮 Using SendGrid for production email...");
-        emailResult = await sendPasswordResetEmailSendGrid(email, resetToken, user.name);
-      } else {
-        // Use Gmail for localhost/development
-        console.log("📮 Using Gmail for localhost email...");
-        console.log("📮 Environment check:", {
-          NODE_ENV: process.env.NODE_ENV,
-          EMAIL_USER: process.env.EMAIL_USER ? "✅ Set" : "❌ Missing",
-          EMAIL_PASSWORD: process.env.EMAIL_PASSWORD ? "✅ Set" : "❌ Missing"
-        });
-        
-        // Verify transporter connection before sending (same as bookings.js)
-        console.log("📮 Verifying Gmail connection...");
-        await transporter.verify();
-        console.log("📮 Gmail connection verified successfully!");
-        
-        const resetLink = `${process.env.FRONTEND_URL || 'https://bookingsystem-bay.vercel.app'}/reset-password?token=${resetToken}`;
-        
-        const mailOptions = {
-          from: `"DJSCE IT Department" <${process.env.EMAIL_USER}>`, // Formatted sender name
-          to: email,
-          subject: 'Password Reset Request - DJSCE IT Department',
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-              <div style="background-color: #2c3e50; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                <h1 style="margin: 0; font-size: 24px;">DJSCE IT Department</h1>
-                <p style="margin: 5px 0 0 0; font-size: 16px;">Password Reset Request</p>
+      // Verify transporter connection before sending (same as bookings.js)
+      console.log("📮 Verifying Gmail connection...");
+      await transporter.verify();
+      console.log("📮 Gmail connection verified successfully!");
+      
+      const resetLink = `${process.env.FRONTEND_URL || 'https://bookingsystem-bay.vercel.app'}/reset-password?token=${resetToken}`;
+      
+      const mailOptions = {
+        from: `"DJSCE IT Department" <${process.env.EMAIL_USER}>`, // Formatted sender name
+        to: email,
+        subject: 'Password Reset Request - DJSCE IT Department',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background-color: #2c3e50; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; font-size: 24px;">DJSCE IT Department</h1>
+              <p style="margin: 5px 0 0 0; font-size: 16px;">Password Reset Request</p>
+            </div>
+            
+            <div style="background-color: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #e0e0e0;">
+              <h2 style="color: #2c3e50; margin-top: 0;">Hello ${user.name},</h2>
+              
+              <p style="color: #555; line-height: 1.6; font-size: 16px;">
+                We received a request to reset your password for your DJSCE IT Department account.
+              </p>
+              
+              <p style="color: #555; line-height: 1.6; font-size: 16px;">
+                Click the button below to reset your password:
+              </p>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetLink}" 
+                   style="background-color: #2c3e50; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold; display: inline-block;">
+                  Reset Password
+                </a>
               </div>
               
-              <div style="background-color: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #e0e0e0;">
-                <h2 style="color: #2c3e50; margin-top: 0;">Hello ${user.name},</h2>
-                
-                <p style="color: #555; line-height: 1.6; font-size: 16px;">
-                  We received a request to reset your password for your DJSCE IT Department account.
-                </p>
-                
-                <p style="color: #555; line-height: 1.6; font-size: 16px;">
-                  Click the button below to reset your password:
-                </p>
-                
-                <div style="text-align: center; margin: 30px 0;">
-                  <a href="${resetLink}" 
-                     style="background-color: #2c3e50; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold; display: inline-block;">
-                    Reset Password
-                  </a>
-                </div>
-                
-                <p style="color: #777; font-size: 14px; line-height: 1.5;">
-                  If the button doesn't work, you can copy and paste this link into your browser:
-                </p>
-                <p style="color: #2c3e50; font-size: 14px; word-break: break-all; background-color: #f0f0f0; padding: 10px; border-radius: 4px;">
-                  ${resetLink}
-                </p>
-                
-                <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 4px; margin: 20px 0;">
-                  <p style="color: #856404; margin: 0; font-size: 14px;">
-                    <strong>Important:</strong> This link will expire in 1 hour for security reasons.
-                  </p>
-                </div>
-                
-                <p style="color: #777; font-size: 14px; line-height: 1.5;">
-                  If you didn't request this password reset, please ignore this email. Your password will remain unchanged.
-                </p>
-                
-                <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
-                
-                <p style="color: #999; font-size: 12px; text-align: center; margin: 0;">
-                  This email was sent from DJSCE IT Department Booking System.<br>
-                  Please do not reply to this email.
+              <p style="color: #777; font-size: 14px; line-height: 1.5;">
+                If the button doesn't work, you can copy and paste this link into your browser:
+              </p>
+              <p style="color: #2c3e50; font-size: 14px; word-break: break-all; background-color: #f0f0f0; padding: 10px; border-radius: 4px;">
+                ${resetLink}
+              </p>
+              
+              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 4px; margin: 20px 0;">
+                <p style="color: #856404; margin: 0; font-size: 14px;">
+                  <strong>Important:</strong> This link will expire in 1 hour for security reasons.
                 </p>
               </div>
+              
+              <p style="color: #777; font-size: 14px; line-height: 1.5;">
+                If you didn't request this password reset, please ignore this email. Your password will remain unchanged.
+              </p>
+              
+              <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
+              
+              <p style="color: #999; font-size: 12px; text-align: center; margin: 0;">
+                This email was sent from DJSCE IT Department Booking System.<br>
+                Please do not reply to this email.
+              </p>
             </div>
-          `
-        };
-        
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`✉️ Password reset email sent to ${email} [${info.messageId}]`);
-        emailResult = { success: true, messageId: info.messageId };
-      }
+          </div>
+        `
+      };
       
-      if (emailResult.success) {
-        res.status(200).json({ 
-          message: "Password reset link has been sent to your email address",
-          expiresIn: "1 hour"
-        });
-      } else {
-        throw new Error(emailResult.error || "Email sending failed");
-      }
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`✉️ Password reset email sent to ${email} [${info.messageId}]`);
+      
+      res.status(200).json({ 
+        message: "Password reset link has been sent to your email address",
+        expiresIn: "1 hour"
+      });
       
     } catch (emailError) {
       console.error("📮 Error sending password reset email:", emailError);

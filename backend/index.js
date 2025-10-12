@@ -11,7 +11,21 @@ const app = express();
 
 // Middleware
 app.use(express.json());
-app.use(cors());
+
+// CORS configuration to allow your Vercel frontend
+app.use(cors({
+  origin: [
+    'http://localhost:3000', // Local development
+    'https://bookingsystem-bay.vercel.app', // Your Vercel frontend
+    'https://bookingsystem-e4oz.onrender.com' // Your Render backend (for testing)
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Handle preflight OPTIONS requests
+app.options('*', cors());
 
 // Connect to MongoDB
 mongoose

@@ -11,8 +11,21 @@ const { sendPasswordResetEmailProduction } = require("../utils/emailServiceProdu
 const { sendPasswordResetEmailAlternative } = require("../utils/emailServiceAlternative");
 const { sendPasswordResetEmailSendGrid } = require("../utils/sendGridService");
 const nodemailer = require("nodemailer");
+const cors = require("cors");
 
 const router = express.Router();
+
+// CORS middleware for auth routes
+router.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'https://bookingsystem-bay.vercel.app',
+    'https://bookingsystem-e4oz.onrender.com'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+}));
 
 // Use the EXACT same working email configuration as bookings.js
 const transporter = nodemailer.createTransport({

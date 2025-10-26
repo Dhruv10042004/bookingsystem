@@ -31,27 +31,47 @@ const transporter = nodemailer.createTransport({
 // Helper function to send email notifications with better error handling
 async function sendEmailNotification(toEmail, subject, message) {
   try {
-    // Skip verification to avoid timeout on Render
-    console.log("📮 Skipping Gmail connection verification for Render compatibility...");
+    console.log("📮 Starting email send process...");
+    console.log("📮 EMAIL_USER:", process.env.EMAIL_USER);
+    console.log("📮 EMAIL_PASSWORD exists:", !!process.env.EMAIL_PASSWORD);
+    console.log("📮 Recipient:", toEmail);
+    
+    // Check if we have email credentials
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+      console.error("❌ Email credentials not configured!");
+      console.error("EMAIL_USER:", !!process.env.EMAIL_USER);
+      console.error("EMAIL_PASSWORD:", !!process.env.EMAIL_PASSWORD);
+      return false;
+    }
+    
+    // Handle array of recipients
+    const recipientEmails = Array.isArray(toEmail) ? toEmail.join(',') : toEmail;
     
     const mailOptions = {
-      from: `"Room Booking System" <${process.env.EMAIL_USER}>`, // Formatted sender name
-      to: toEmail,
+      from: `"Room Booking System" <${process.env.EMAIL_USER}>`,
+      to: recipientEmails,
       subject: subject,
       html: message,
     };
     
+    console.log("📮 Sending email to:", recipientEmails);
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Email notification sent to ${toEmail} [${info.messageId}]`);
+    console.log(`✉️ Email notification sent successfully [${info.messageId}]`);
     return true;
   } catch (error) {
     console.error("📮 Error sending email notification:", error);
+    console.error("Error code:", error.code);
+    console.error("Error message:", error.message);
     
     // Provide more detailed error information
     if (error.code === 'EAUTH') {
-      console.error("❌ Authentication failed: Check your email credentials");
+      console.error("❌ Authentication failed: Check your EMAIL_USER and EMAIL_PASSWORD environment variables");
     } else if (error.code === 'ESOCKET') {
       console.error("❌ Network error: Check your internet connection");
+    } else if (error.code === 'EENVELOPE') {
+      console.error("❌ Invalid email address format");
+    } else if (error.code === 'ETIMEDOUT') {
+      console.error("❌ Connection timeout: Email server is not responding");
     }
     
     return false;
@@ -60,10 +80,18 @@ async function sendEmailNotification(toEmail, subject, message) {
 
 // ✅ Helper function to send emails asynchronously without blocking the response
 function sendEmailAsync(toEmail, subject, message) {
+  console.log(`📧 Attempting to send email to:`, toEmail);
+  console.log(`📧 Email subject:`, subject);
+  
   // Fire and forget - don't wait for email to complete
   sendEmailNotification(toEmail, subject, message)
-    .then(() => console.log(`✅ Async email sent to ${toEmail}`))
-    .catch((err) => console.error(`❌ Async email failed for ${toEmail}:`, err));
+    .then(() => {
+      console.log(`✅ Async email sent successfully to:`, toEmail);
+    })
+    .catch((err) => {
+      console.error(`❌ Async email failed for ${toEmail}:`, err);
+      console.error(`❌ Error details:`, err.message, err.stack);
+    });
 }
 
 // Helper function to get admin emails
@@ -261,7 +289,8 @@ router.post("/", authenticateUser, async (req, res) => {
     const formattedDate = new Date(date).toLocaleDateString();
     getAdminEmails()
       .then(adminEmails => {
-        if (adminEmails.length > 0) {
+        console.log("📮 Admin emails fetched:", adminEmails);
+        if (adminEmails && adminEmails.length > 0) {
           const emailSubject = "New Booking Request Requires Approval";
           const emailMessage = `
             <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
@@ -285,6 +314,7 @@ router.post("/", authenticateUser, async (req, res) => {
             </div>
           `;
           
+          console.log("📮 Sending email to admins:", adminEmails);
           sendEmailAsync(adminEmails, emailSubject, emailMessage);
         } else {
           console.log("⚠️ No admin emails found to send notification");
@@ -358,8 +388,9 @@ router.put("/admin/approve/:id", authenticateUser, authorizeRole(["Admin"]), asy
     // 📧 Send notification emails asynchronously (non-blocking)
     User.find({ role: "HOD" }).select("email").then(hods => {
       const hodEmails = hods.map(hod => hod.email);
+      console.log("📮 HOD emails:", hodEmails);
       
-      if (hodEmails.length > 0) {
+      if (hodEmails && hodEmails.length > 0) {
         const bookingDate=new Date(booking.date);
         const formattedDate = new Date(booking.date).toLocaleDateString();
         const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -384,10 +415,14 @@ router.put("/admin/approve/:id", authenticateUser, authorizeRole(["Admin"]), asy
           </div>
         `;
         
+        console.log("📮 Sending email to HODs:", hodEmails);
         sendEmailAsync(hodEmails, emailSubject, emailMessage);
+      } else {
+        console.log("⚠️ No HOD emails found");
       }
       
       // Notify teacher asynchronously
+      console.log("📮 Sending email to teacher:", booking.teacher.email);
       const teacherEmailSubject = "Your Booking Request Approved by Admin";
       const teacherEmailMessage = `
         <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
@@ -408,7 +443,10 @@ router.put("/admin/approve/:id", authenticateUser, authorizeRole(["Admin"]), asy
       `;
       
       sendEmailAsync(booking.teacher.email, teacherEmailSubject, teacherEmailMessage);
-    }).catch(err => console.error("⚠️ Error sending notification emails:", err));
+    }).catch(err => {
+      console.error("⚠️ Error sending notification emails:", err);
+      console.error("Error details:", err.message, err.stack);
+    });
   } catch (error) {
     console.error("🚨 Error Approving Booking:", error.message);
     res.status(500).json({ error: "Server error while approving booking." });

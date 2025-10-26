@@ -45,6 +45,7 @@ const facultyNames = [
 ];
 
 const API="https://bookingsystem-e4oz.onrender.com/api";
+// const API="http://localhost:5000/api";
 const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const AdminTimeTableInput = () => {

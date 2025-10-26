@@ -37,11 +37,15 @@ app.use(cors({
 // Handle preflight OPTIONS requests
 app.options('*', cors());
 
-// Connect to MongoDB
+// Connect to MongoDB with optimized connection pooling for Render
 mongoose
   .connect(process.env.MONGO_ATLAS_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
+    maxPoolSize: 10, // Maintain up to 10 socket connections
+    serverSelectionTimeoutMS: 5000, // How long to try to connect
+    socketTimeoutMS: 45000, // How long to wait for responses
+    connectTimeoutMS: 10000, // Initial connection timeout
   })
   .then(() => console.log("✅ Connected to MongoDB Atlas"))
   .catch((err) => console.error("❌ MongoDB Connection Error:", err));

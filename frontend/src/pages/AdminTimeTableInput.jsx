@@ -7,7 +7,6 @@ import axios from "axios";
 import ExcelJS from "exceljs";
 import Navbar from "../components/Navbar";
 
-// Faculty names list
 const facultyNames = [
   "Dr. Vinaya Sawant (VS)", 
   "Dr. A. R. Joshi (ARJ)", 
@@ -44,8 +43,8 @@ const facultyNames = [
   "Dr. Naresh Afre (NAF)", 
   "Ms. Prahelika Pai (PP)"
 ];
-// const API="https://bookingsystem-e4oz.onrender.com/api"
-const API = "http://localhost:5000/api";
+
+const API="https://bookingsystem-e4oz.onrender.com/api";
 const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const AdminTimeTableInput = () => {
@@ -57,7 +56,6 @@ const AdminTimeTableInput = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ text: "", type: "" });
 
-  // Parse class codes like "TY-I1,2,3", "TY-I1-2", "SYI2", etc.
   const parseClassCode = (roomCode) => {
     if (!roomCode || typeof roomCode !== 'string') return { year: "", division: "" };
     const trimmedCode = roomCode.trim();
@@ -66,42 +64,62 @@ const AdminTimeTableInput = () => {
     return match ? { year: match[1], division: match[2] || "" } : { year: trimmedCode, division: "" };
   };
 
-  // ✅ Updated function to support multiple stacked entries in one cell
   const parseCellEntry = (entryStr) => {
     if (!entryStr || typeof entryStr !== "string") return null;
     entryStr = entryStr.trim();
 
-    // ✅ Handle multiple entries (newline, semicolon, or stacked patterns)
-    const multipleEntryRegex = /\([A-Za-z0-9]+\)[^()]+\([^()]+\)/g;
-    const matches = entryStr.match(multipleEntryRegex);
-    if (matches && matches.length > 1) {
-      return matches.map((e) => parseCellEntry(e.trim())).filter(Boolean);
+    const lines = entryStr.split(/[\r\n]+/).filter((e) => e.trim());
+    if (lines.length > 1) {
+      const parsed = lines.map((line) => parseCellEntry(line.trim())).filter(Boolean);
+      return parsed.length > 1 ? parsed : parsed[0] || null;
     }
 
-    // ✅ Also handle newlines or semicolons
-    const entries = entryStr.split(/[\n;]/).filter((e) => e.trim());
-    if (entries.length > 1) {
-      return entries.map((e) => parseCellEntry(e.trim())).filter(Boolean);
+    const allParens = entryStr.match(/\([^)]+\)/g);
+    if (allParens && allParens.length >= 4) {
+      const completePattern = /\(([^)]+)\)\s*([^\s(]+(?::[^\s(]+)?)\s*\(([^)]+)\)/g;
+      const matches = [];
+      let match;
+      while ((match = completePattern.exec(entryStr)) !== null) {
+        const batch = match[1].trim();
+        const subject = match[2].trim();
+        const facultyCode = match[3].trim();
+        const isFacultyCode = facultyNames.some(name => name.includes(`(${facultyCode})`));
+        if (isFacultyCode) matches.push({ batch, subject, facultyCode });
+      }
+      if (matches.length >= 2) return matches;
+
+      const lastParen = allParens[allParens.length - 1];
+      const lastCode = lastParen.replace(/[()]/g, '');
+      const isLastFaculty = facultyNames.some(name => name.includes(`(${lastCode})`));
+      if (isLastFaculty && matches.length < 2) {
+        const beforeLastParen = entryStr.substring(0, entryStr.lastIndexOf(lastParen));
+        const classSubjPattern = /\(([^)]+)\)\s*([^\s(]+(?::[^\s(]+)?)/g;
+        const classMatches = [];
+        while ((match = classSubjPattern.exec(beforeLastParen)) !== null) {
+          classMatches.push({
+            batch: match[1].trim(),
+            subject: match[2].trim(),
+            facultyCode: lastCode,
+          });
+        }
+        if (classMatches.length >= 2) return classMatches;
+      }
     }
 
-    // ✅ Parse single entry: (CLASS)SUBJECT (FACULTY)
-    const match = entryStr.match(/\(([^)]+)\)\s*([^\s:]+:?[^\s]*)\s*\(([^)]+)\)/);
-    if (!match) return null;
-
+    const singleMatch = entryStr.match(/\(([^)]+)\)\s*([^\s:]+:?[^\s]*)\s*\(([^)]+)\)/);
+    if (!singleMatch) return null;
     return {
-      batch: match[1].trim(),       // e.g. SYI2
-      subject: match[2].trim(),     // e.g. I2-1:DS
-      facultyCode: match[3].trim(), // e.g. PH
+      batch: singleMatch[1].trim(),
+      subject: singleMatch[2].trim(),
+      facultyCode: singleMatch[3].trim(),
     };
   };
 
-  // ✅ Faculty code → Full name
   const findFacultyByCode = (code) => {
     const match = facultyNames.find((name) => name.includes(`(${code})`));
     return match ? match : code;
   };
 
-  // ✅ Expand division range or grouped strings like I1+I2+I3
   const expandDivisions = (divStr) => {
     if (!divStr || typeof divStr !== "string") return [];
     const cleaned = divStr.replace(/\s+/g, "");
@@ -120,7 +138,6 @@ const AdminTimeTableInput = () => {
     return [cleaned];
   };
 
-  // ✅ Parse time slot like "10:00-11:00"
   const parseTimeSlot = (periodText) => {
     if (!periodText || typeof periodText !== "string") return null;
     const match = periodText.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
@@ -128,7 +145,6 @@ const AdminTimeTableInput = () => {
     return null;
   };
 
-  // ✅ Merge consecutive identical classes
   const mergeConsecutiveSlots = (entries) => {
     if (!entries.length) return [];
     const sorted = entries.sort((a, b) => a.day.localeCompare(b.day) || a.startTime.localeCompare(b.startTime));
@@ -152,13 +168,11 @@ const AdminTimeTableInput = () => {
     return merged;
   };
 
-  // File selection
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
     setMessage({ text: "", type: "" });
   };
 
-  // ✅ Main Excel processing
   const processExcelFile = async () => {
     if (!file) return setMessage({ text: "Please select a file first", type: "error" });
     if (!roomName || !roomType || !capacity) return setMessage({ text: "Please complete room details", type: "error" });
@@ -173,7 +187,6 @@ const AdminTimeTableInput = () => {
       let headerRowIndex = -1;
       const dayCols = {};
 
-      // Detect day columns
       for (let r = 1; r <= 10; r++) {
         const row = worksheet.getRow(r);
         row.eachCell((cell, col) => {
@@ -188,12 +201,13 @@ const AdminTimeTableInput = () => {
         }
       }
 
-      // Find time column
       let timeCol = -1;
       worksheet.getRow(headerRowIndex).eachCell((cell, col) => {
         const v = String(cell.value || "").toUpperCase();
         if (v.includes("TIME") || v.includes("PERIOD")) timeCol = col;
       });
+
+      const processedCells = new Set();
 
       for (let r = headerRowIndex + 1; r <= worksheet.rowCount; r++) {
         const row = worksheet.getRow(r);
@@ -202,7 +216,49 @@ const AdminTimeTableInput = () => {
         if (!time) continue;
 
         for (const [i, col] of Object.entries(dayCols)) {
-          const val = row.getCell(col).value;
+          const cell = row.getCell(col);
+          const cellKey = `${r}-${col}`;
+          if (processedCells.has(cellKey)) continue;
+
+          let val = cell.value;
+
+          // --------- Robust merged-cell handling (no _merges access) ----------
+          if (cell.isMerged) {
+            const master = cell.master;
+            // Determine bottom row of vertical merge by walking down
+            let endRow = master.row;
+            // Keep moving down while the cell at (endRow+1, master.col) is merged and points to same master
+            while (endRow + 1 <= worksheet.rowCount) {
+              const nextCell = worksheet.getRow(endRow + 1).getCell(master.col);
+              if (nextCell && nextCell.isMerged && nextCell.master &&
+                  nextCell.master.row === master.row && nextCell.master.col === master.col) {
+                endRow += 1;
+              } else {
+                break;
+              }
+            }
+
+            // If merged spans multiple rows, read the time from the bottom row to get the true endTime
+            if (endRow !== master.row) {
+              const bottomRowTimeVal = worksheet.getRow(endRow).getCell(timeCol).value;
+              const bottomRowTime = parseTimeSlot(String(bottomRowTimeVal));
+              if (bottomRowTime) {
+                time.endTime = bottomRowTime.endTime;
+              }
+            }
+
+            val = master.value;
+            // mark all rows in the merged vertical block as processed for this column
+            for (let markRow = master.row; markRow <= endRow; markRow++) {
+              processedCells.add(`${markRow}-${master.col}`);
+            }
+            // also mark current cell position
+            processedCells.add(cellKey);
+          } else {
+            processedCells.add(cellKey);
+          }
+          // -------------------------------------------------------------------
+
           if (!val) continue;
 
           const parsed = parseCellEntry(String(val));
@@ -261,7 +317,6 @@ const AdminTimeTableInput = () => {
     setMessage({ text: `Uploaded ${success} entries successfully.`, type: "success" });
   };
 
-  // ✅ UI remains identical
   return (
     <>
       <Navbar />

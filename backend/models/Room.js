@@ -35,4 +35,10 @@ const RoomSchema = new mongoose.Schema({
   ]
 });
 
+// ✅ Add indexes for frequently queried fields
+RoomSchema.index({ name: 1 });
+RoomSchema.index({ "schedule.day": 1 });
+RoomSchema.index({ "schedule.approvalStatus": 1 });
+RoomSchema.index({ "schedule.date": 1 });
+
 module.exports = mongoose.model("Room", RoomSchema);

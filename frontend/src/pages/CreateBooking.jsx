@@ -22,6 +22,7 @@ function CreateBooking() {
   const [selectedRoom, setSelectedRoom] = useState("");
   const [selectedSlots, setSelectedSlots] = useState([]);
   const [purpose, setPurpose] = useState("");
+  const [isSunday, setIsSunday] = useState(false);
 
   const getDayFromDate = (date) => {
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -29,7 +30,9 @@ function CreateBooking() {
   };
 
   useEffect(() => {
-    setSelectedDay(getDayFromDate(selectedDate));
+    const day = getDayFromDate(selectedDate);
+    setSelectedDay(day);
+    setIsSunday(day === "Sunday");
   }, [selectedDate]);
 
   // Fetch available rooms along with time slots on the selected day
@@ -46,6 +49,9 @@ function CreateBooking() {
         .catch(error => {
           console.error("Error fetching available rooms:", error);
         });
+    } else {
+      // Clear available rooms when Sunday is selected
+      setAvailableRooms({});
     }
   }, [selectedDay,selectedDate]);
 
@@ -137,60 +143,84 @@ function CreateBooking() {
         />
 
         {/* Auto-selected Day */}
-        <Typography variant="h6" sx={{ marginTop: 1 }}>Selected Day: {selectedDay}</Typography>
+        <Typography variant="h6" sx={{ marginTop: 1 }}>
+          Selected Day: {selectedDay}
+          {isSunday && (
+            <Typography variant="body2" color="error" sx={{ mt: 1, fontWeight: 'bold' }}>
+              ⚠️ Sunday bookings are not available. Please select another day.
+            </Typography>
+          )}
+        </Typography>
 
         {/* Available Rooms & Time Slots */}
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Room Name</TableCell>
-              <TableCell>Type</TableCell>
-              <TableCell>Capacity</TableCell>
-              <TableCell>Available Time Slots</TableCell>
-              <TableCell>Select</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {Object.keys(availableRooms).length > 0 ? (
-              Object.entries(availableRooms).map(([roomName, roomData]) => (
-                <TableRow key={roomName}>
-                  <TableCell>{roomName}</TableCell>
-                  <TableCell>{roomData.type}</TableCell>
-                  <TableCell>{roomData.capacity}</TableCell>
-                  <TableCell>
-                    <Select
-                      multiple
-                      fullWidth
-                      value={selectedRoom === roomName ? selectedSlots : []}
-                      onChange={(e) => handleTimeSlotChange(roomName, e.target.value)}
-                      renderValue={(selected) => selected.join(", ")}
-                    >
-                      {roomData.availableSlots.map((slot, index) => (
-                        <MenuItem key={index} value={slot.startTime}>
-                          <Checkbox checked={selectedSlots.indexOf(slot.startTime) > -1} />
-                          <ListItemText primary={`${slot.startTime} - ${slot.endTime}`} />
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant={selectedRoom === roomName ? "contained" : "outlined"}
-                      color="primary"
-                      onClick={() => setSelectedRoom(roomName)}
-                    >
-                      {selectedRoom === roomName ? "Selected" : "Select"}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
+        {isSunday ? (
+          <Table>
+            <TableBody>
               <TableRow>
-                <TableCell colSpan={5} align="center">No available rooms</TableCell>
+                <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
+                  <Typography variant="h6" color="error" sx={{ mb: 2 }}>
+                    📅 Sunday Bookings Not Available
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Please select a different date to view available rooms and time slots.
+                  </Typography>
+                </TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableBody>
+          </Table>
+        ) : (
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Room Name</TableCell>
+                <TableCell>Type</TableCell>
+                <TableCell>Capacity</TableCell>
+                <TableCell>Available Time Slots</TableCell>
+                <TableCell>Select</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {Object.keys(availableRooms).length > 0 ? (
+                Object.entries(availableRooms).map(([roomName, roomData]) => (
+                  <TableRow key={roomName}>
+                    <TableCell>{roomName}</TableCell>
+                    <TableCell>{roomData.type}</TableCell>
+                    <TableCell>{roomData.capacity}</TableCell>
+                    <TableCell>
+                      <Select
+                        multiple
+                        fullWidth
+                        value={selectedRoom === roomName ? selectedSlots : []}
+                        onChange={(e) => handleTimeSlotChange(roomName, e.target.value)}
+                        renderValue={(selected) => selected.join(", ")}
+                      >
+                        {roomData.availableSlots.map((slot, index) => (
+                          <MenuItem key={index} value={slot.startTime}>
+                            <Checkbox checked={selectedSlots.indexOf(slot.startTime) > -1} />
+                            <ListItemText primary={`${slot.startTime} - ${slot.endTime}`} />
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant={selectedRoom === roomName ? "contained" : "outlined"}
+                        color="primary"
+                        onClick={() => setSelectedRoom(roomName)}
+                      >
+                        {selectedRoom === roomName ? "Selected" : "Select"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5} align="center">No available rooms</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        )}
 
         {/* Purpose Input */}
         <TextField
@@ -209,22 +239,28 @@ function CreateBooking() {
         </Typography>
 
         {/* Submit Button */}
-        <Button type="submit" variant="contained" color="primary" 
-        sx={{ 
-          backgroundColor: "#2c3e50", 
-          color: "white", 
-          padding: "12px 12px",
-          marginTop:2,
-          marginBottom: 2,
-          borderRadius: 1,
-          textTransform: "none",
-          fontSize: "0.9rem",
-          "&:hover": {
-            backgroundColor: "#1a2530"
-          }
-        }}
-        fullWidth onClick={handleSubmit} >
-          Create Booking
+        <Button 
+          type="submit" 
+          variant="contained" 
+          color="primary" 
+          sx={{ 
+            backgroundColor: isSunday ? "#9e9e9e" : "#2c3e50", 
+            color: "white", 
+            padding: "12px 12px",
+            marginTop:2,
+            marginBottom: 2,
+            borderRadius: 1,
+            textTransform: "none",
+            fontSize: "0.9rem",
+            "&:hover": {
+              backgroundColor: isSunday ? "#9e9e9e" : "#1a2530"
+            }
+          }}
+          fullWidth 
+          onClick={handleSubmit}
+          disabled={isSunday || !selectedRoom || selectedSlots.length === 0 || !purpose}
+        >
+          {isSunday ? "Cannot Book on Sunday" : "Create Booking"}
         </Button>
       </Container>
     </LocalizationProvider>

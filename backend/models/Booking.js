@@ -10,4 +10,14 @@ const bookingSchema = new mongoose.Schema({
   hodStatus: { type: String, enum: ["Pending", "Granted", "Rejected", "N/A"], default: "Pending" }
 });
 
+// ✅ Add indexes for frequently queried fields to improve query performance
+bookingSchema.index({ teacher: 1 });
+bookingSchema.index({ classroom: 1 });
+bookingSchema.index({ date: 1 });
+bookingSchema.index({ classroom: 1, date: 1, timeSlot: 1 });
+bookingSchema.index({ status: 1 });
+bookingSchema.index({ hodStatus: 1 });
+bookingSchema.index({ teacher: 1, status: 1 });
+bookingSchema.index({ date: 1, status: 1 });
+
 module.exports = mongoose.model("Booking", bookingSchema);

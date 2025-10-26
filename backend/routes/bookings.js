@@ -58,6 +58,14 @@ async function sendEmailNotification(toEmail, subject, message) {
   }
 }
 
+// ✅ Helper function to send emails asynchronously without blocking the response
+function sendEmailAsync(toEmail, subject, message) {
+  // Fire and forget - don't wait for email to complete
+  sendEmailNotification(toEmail, subject, message)
+    .then(() => console.log(`✅ Async email sent to ${toEmail}`))
+    .catch((err) => console.error(`❌ Async email failed for ${toEmail}:`, err));
+}
+
 // Helper function to get admin emails
 async function getAdminEmails() {
   try {
@@ -246,46 +254,43 @@ router.post("/", authenticateUser, async (req, res) => {
     await room.save();
     console.log("Step 6: Room schedule updated successfully");
     
-    // 📧 Send email notification to admin
-    const formattedDate = new Date(date).toLocaleDateString();
-    const adminEmails = await getAdminEmails();
-    
-    if (adminEmails.length > 0) {
-      const emailSubject = "New Booking Request Requires Approval";
-      const emailMessage = `
-        <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
-          <h2 style="color: #2c3e50;">New Booking Request Requires Approval</h2>
-          <p>A new booking request has been submitted and requires your approval:</p>
-          
-          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
-            <p><strong>Teacher:</strong> ${req.user.name} (${req.user.email})</p>
-            <p><strong>Room:</strong> ${roomId}</p>
-            <p><strong>Date:</strong> ${formattedDate}</p>
-            <p><strong>Day:</strong> ${day}</p>
-            <p><strong>Time Slot:</strong> ${timeSlot}</p>
-            <p><strong>Subject:</strong> ${subject || "Not specified"}</p>
-            <p><strong>Faculty:</strong> ${faculty || req.user.name}</p>
-            <p><strong>Class:</strong> ${classInfo?.year || ""}${classInfo?.division ? `-${classInfo.division}` : ""}</p>
-            <p><strong>Purpose:</strong> ${purpose}</p>
-          </div>
-          
-          <p>Please log in to the admin dashboard to approve or reject this request.https://bookingsystem-bay.vercel.app</p>
-          <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
-        </div>
-      `;
-      
-      try {
-        await sendEmailNotification(adminEmails, emailSubject, emailMessage);
-        console.log("✉️ Admin notification email sent successfully");
-      } catch (emailError) {
-        console.error("📮 Failed to send admin notification email:", emailError);
-        // We don't want to block the booking process if email fails
-      }
-    } else {
-      console.log("⚠️ No admin emails found to send notification");
-    }
-    
+    // ✅ Send response immediately without waiting for email
     res.status(201).json({ message: "Booking request submitted!", booking });
+    
+    // 📧 Send email notification to admin asynchronously (non-blocking)
+    const formattedDate = new Date(date).toLocaleDateString();
+    getAdminEmails()
+      .then(adminEmails => {
+        if (adminEmails.length > 0) {
+          const emailSubject = "New Booking Request Requires Approval";
+          const emailMessage = `
+            <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
+              <h2 style="color: #2c3e50;">New Booking Request Requires Approval</h2>
+              <p>A new booking request has been submitted and requires your approval:</p>
+              
+              <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                <p><strong>Teacher:</strong> ${req.user.name} (${req.user.email})</p>
+                <p><strong>Room:</strong> ${roomId}</p>
+                <p><strong>Date:</strong> ${formattedDate}</p>
+                <p><strong>Day:</strong> ${day}</p>
+                <p><strong>Time Slot:</strong> ${timeSlot}</p>
+                <p><strong>Subject:</strong> ${subject || "Not specified"}</p>
+                <p><strong>Faculty:</strong> ${faculty || req.user.name}</p>
+                <p><strong>Class:</strong> ${classInfo?.year || ""}${classInfo?.division ? `-${classInfo.division}` : ""}</p>
+                <p><strong>Purpose:</strong> ${purpose}</p>
+              </div>
+              
+              <p>Please log in to the admin dashboard to approve or reject this request.https://bookingsystem-bay.vercel.app</p>
+              <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
+            </div>
+          `;
+          
+          sendEmailAsync(adminEmails, emailSubject, emailMessage);
+        } else {
+          console.log("⚠️ No admin emails found to send notification");
+        }
+      })
+      .catch(err => console.error("⚠️ Error fetching admin emails:", err));
   } catch (error) {
     console.error("🚨 Error in booking:", error.message);
     res.status(500).json({ error: "Server error while processing booking." });
@@ -347,16 +352,18 @@ router.put("/admin/approve/:id", authenticateUser, authorizeRole(["Admin"]), asy
     booking.hodStatus = "Pending";
     await booking.save();
 
-    // 📧 Send notification email to HOD
-    try {
-      const hodEmails = await User.find({ role: "HOD" }).select("email").then(hods => hods.map(hod => hod.email));
+    // ✅ Send response immediately
+    res.json({ message: "Booking approved by admin and updated in the schedule", booking });
+
+    // 📧 Send notification emails asynchronously (non-blocking)
+    User.find({ role: "HOD" }).select("email").then(hods => {
+      const hodEmails = hods.map(hod => hod.email);
       
       if (hodEmails.length > 0) {
         const bookingDate=new Date(booking.date);
         const formattedDate = new Date(booking.date).toLocaleDateString();
         const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-        const bookingDay = daysOfWeek[bookingDate.getUTCDay()]; // Ensure correct day conversion
-        // Ensure correct day conversion
+        const bookingDay = daysOfWeek[bookingDate.getUTCDay()];
         const emailSubject = "Booking Approved by Admin - HOD Approval Required";
         const emailMessage = `
           <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
@@ -377,11 +384,10 @@ router.put("/admin/approve/:id", authenticateUser, authorizeRole(["Admin"]), asy
           </div>
         `;
         
-        await sendEmailNotification(hodEmails, emailSubject, emailMessage);
-        console.log("✉️ HOD notification email sent successfully");
+        sendEmailAsync(hodEmails, emailSubject, emailMessage);
       }
       
-      // Also notify the teacher that their booking was approved by admin
+      // Notify teacher asynchronously
       const teacherEmailSubject = "Your Booking Request Approved by Admin";
       const teacherEmailMessage = `
         <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
@@ -401,15 +407,8 @@ router.put("/admin/approve/:id", authenticateUser, authorizeRole(["Admin"]), asy
         </div>
       `;
       
-      await sendEmailNotification(booking.teacher.email, teacherEmailSubject, teacherEmailMessage);
-      console.log("✉️ Teacher notification email sent successfully");
-      
-    } catch (emailError) {
-      console.error("📮 Error sending notification emails:", emailError);
-      // Continue even if email sending fails
-    }
-
-    res.json({ message: "Booking approved by admin and updated in the schedule", booking });
+      sendEmailAsync(booking.teacher.email, teacherEmailSubject, teacherEmailMessage);
+    }).catch(err => console.error("⚠️ Error sending notification emails:", err));
   } catch (error) {
     console.error("🚨 Error Approving Booking:", error.message);
     res.status(500).json({ error: "Server error while approving booking." });
@@ -458,34 +457,29 @@ router.put("/admin/reject/:id", authenticateUser, authorizeRole(["Admin"]), asyn
     booking.hodStatus = "N/A";
     await booking.save();
 
-    // 📧 Send notification email to the teacher
-    try {
-      const emailSubject = "Your Booking Request Has Been Rejected";
-      const emailMessage = `
-        <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
-          <h2 style="color: #e74c3c;">Your Booking Request Has Been Rejected</h2>
-          <p>We regret to inform you that your booking request has been rejected by the admin:</p>
-          
-          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
-            <p><strong>Room:</strong> ${booking.classroom}</p>
-            <p><strong>Date:</strong> ${new Date(booking.date).toLocaleDateString()}</p>
-            <p><strong>Time Slot:</strong> ${booking.timeSlot}</p>
-            <p><strong>Purpose:</strong> ${booking.purpose}</p>
-          </div>
-          
-          <p>If you have any questions or need further clarification, please contact the administration.</p>
-          <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
-        </div>
-      `;
-      
-      await sendEmailNotification(booking.teacher.email, emailSubject, emailMessage);
-      console.log("✉️ Teacher rejection notification email sent successfully");
-    } catch (emailError) {
-      console.error("📮 Error sending rejection notification email:", emailError);
-      // Continue even if email sending fails
-    }
-
+    // ✅ Send response immediately
     res.json({ message: "Booking rejected by admin and slot is now available", booking });
+
+    // 📧 Send notification email asynchronously (non-blocking)
+    const emailSubject = "Your Booking Request Has Been Rejected";
+    const emailMessage = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
+        <h2 style="color: #e74c3c;">Your Booking Request Has Been Rejected</h2>
+        <p>We regret to inform you that your booking request has been rejected by the admin:</p>
+        
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+          <p><strong>Room:</strong> ${booking.classroom}</p>
+          <p><strong>Date:</strong> ${new Date(booking.date).toLocaleDateString()}</p>
+          <p><strong>Time Slot:</strong> ${booking.timeSlot}</p>
+          <p><strong>Purpose:</strong> ${booking.purpose}</p>
+        </div>
+        
+        <p>If you have any questions or need further clarification, please contact the administration.</p>
+        <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
+      </div>
+    `;
+    
+    sendEmailAsync(booking.teacher.email, emailSubject, emailMessage);
   } catch (error) {
     console.error("🚨 Error Rejecting Booking:", error.message);
     res.status(500).json({ error: "Server error while rejecting booking." });
@@ -533,39 +527,34 @@ router.put("/hod/grant/:id", authenticateUser, authorizeRole(["HOD"]), async (re
       await room.save();
     }
 
-    // 📧 Send notification email to the teacher
-    try {
-      const emailSubject = "Your Booking Has Been Granted";
-      const bookingDate = new Date(booking.date);
-      const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-      const bookingDay = daysOfWeek[bookingDate.getUTCDay()];
-      const emailMessage = `
-        <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
-          <h2 style="color: #27ae60;">Your Booking Has Been Granted</h2>
-          <p>Good news! Your booking request has been fully approved and granted:</p>
-          
-          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
-            <p><strong>Room:</strong> ${booking.classroom}</p>
-            <p><strong>Date:</strong> ${new Date(booking.date).toLocaleDateString()}</p>
-            <p><strong>Day:</strong> ${bookingDay}</p>
-            <p><strong>Time Slot:</strong> ${booking.timeSlot}</p>
-            <p><strong>Purpose:</strong> ${booking.purpose}</p>
-            <p><strong>Status:</strong> Granted</p>
-          </div>
-          
-          <p>The room has been allocated for your use as requested.https://bookingsystem-bay.vercel.app</p>
-          <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
-        </div>
-      `;
-      
-      await sendEmailNotification(booking.teacher.email, emailSubject, emailMessage);
-      console.log("✉️ Teacher grant notification email sent successfully");
-    } catch (emailError) {
-      console.error("📮 Error sending grant notification email:", emailError);
-      // Continue even if email sending fails
-    }
-
+    // ✅ Send response immediately
     res.json({ message: "Booking granted by HOD and updated in the schedule", booking });
+
+    // 📧 Send notification email asynchronously (non-blocking)
+    const emailSubject = "Your Booking Has Been Granted";
+    const bookingDate = new Date(booking.date);
+    const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const bookingDay = daysOfWeek[bookingDate.getUTCDay()];
+    const emailMessage = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
+        <h2 style="color: #27ae60;">Your Booking Has Been Granted</h2>
+        <p>Good news! Your booking request has been fully approved and granted:</p>
+        
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+          <p><strong>Room:</strong> ${booking.classroom}</p>
+          <p><strong>Date:</strong> ${new Date(booking.date).toLocaleDateString()}</p>
+          <p><strong>Day:</strong> ${bookingDay}</p>
+          <p><strong>Time Slot:</strong> ${booking.timeSlot}</p>
+          <p><strong>Purpose:</strong> ${booking.purpose}</p>
+          <p><strong>Status:</strong> Granted</p>
+        </div>
+        
+        <p>The room has been allocated for your use as requested.https://bookingsystem-bay.vercel.app</p>
+        <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
+      </div>
+    `;
+    
+    sendEmailAsync(booking.teacher.email, emailSubject, emailMessage);
   } catch (error) {
     console.error("🚨 Error Granting Booking:", error.message);
     res.status(500).json({ error: "Server error while granting booking." });
@@ -613,35 +602,30 @@ router.put("/hod/reject/:id", authenticateUser, authorizeRole(["HOD"]), async (r
     booking.hodStatus = "Rejected";
     await booking.save();
 
-    // 📧 Send notification email to the teacher
-    try {
-      const emailSubject = "Your Booking Request Has Been Rejected by HOD";
-      const emailMessage = `
-        <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
-          <h2 style="color: #e74c3c;">Your Booking Request Has Been Rejected by HOD</h2>
-          <p>We regret to inform you that your booking request has been rejected by the HOD:</p>
-          
-          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
-            <p><strong>Room:</strong> ${booking.classroom}</p>
-            <p><strong>Date:</strong> ${new Date(booking.date).toLocaleDateString()}</p>
-            <p><strong>Time Slot:</strong> ${booking.timeSlot}</p>
-            <p><strong>Purpose:</strong> ${booking.purpose}</p>
-            <p><strong>Status:</strong> Rejected by HOD</p>
-          </div>
-          
-          <p>If you have any questions or need further clarification, please contact the department head.</p>
-          <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
-        </div>
-      `;
-      
-      await sendEmailNotification(booking.teacher.email, emailSubject, emailMessage);
-      console.log("✉️ Teacher HOD rejection notification email sent successfully");
-    } catch (emailError) {
-      console.error("📮 Error sending HOD rejection notification email:", emailError);
-      // Continue even if email sending fails
-    }
-
+    // ✅ Send response immediately
     res.json({ message: "Booking rejected by HOD and slot is now available", booking });
+
+    // 📧 Send notification email asynchronously (non-blocking)
+    const emailSubject = "Your Booking Request Has Been Rejected by HOD";
+    const emailMessage = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
+        <h2 style="color: #e74c3c;">Your Booking Request Has Been Rejected by HOD</h2>
+        <p>We regret to inform you that your booking request has been rejected by the HOD:</p>
+        
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+          <p><strong>Room:</strong> ${booking.classroom}</p>
+          <p><strong>Date:</strong> ${new Date(booking.date).toLocaleDateString()}</p>
+          <p><strong>Time Slot:</strong> ${booking.timeSlot}</p>
+          <p><strong>Purpose:</strong> ${booking.purpose}</p>
+          <p><strong>Status:</strong> Rejected by HOD</p>
+        </div>
+        
+        <p>If you have any questions or need further clarification, please contact the department head.</p>
+        <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
+      </div>
+    `;
+    
+    sendEmailAsync(booking.teacher.email, emailSubject, emailMessage);
   } catch (error) {
     console.error("🚨 Error Rejecting Booking:", error.message);
     res.status(500).json({ error: "Server error while rejecting booking." });

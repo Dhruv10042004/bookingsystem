@@ -9,4 +9,9 @@ const userSchema = new mongoose.Schema({
   resetPasswordExpires: { type: Date }
 });
 
+// ✅ Add indexes for frequently queried fields
+userSchema.index({ email: 1 });
+userSchema.index({ role: 1 });
+userSchema.index({ email: 1, role: 1 });
+
 module.exports = mongoose.model("User", userSchema);

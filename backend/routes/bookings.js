@@ -2,49 +2,156 @@ const express = require("express");
 const Booking = require("../models/Booking");
 const Room = require("../models/Room");
 const dotenv = require("dotenv");
-const User = require("../models/User"); // We'll need this to get admin emails
+const User = require("../models/User");
 const router = express.Router();
 const { authenticateUser, authorizeRole } = require("../middleware/auth");
 const nodemailer = require("nodemailer");
 dotenv.config();
-// Configure nodemailer transporter for Render (Gmail SMTP)
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465, // Use port 465 (SSL) - alternative to 587
-  secure: true, // Use SSL instead of TLS
-  auth: {
-    user: process.env.EMAIL_USER, // Your Gmail address
-    pass: process.env.EMAIL_PASSWORD, // Gmail App Password (not regular password)
-  },
-  tls: {
-    rejectUnauthorized: false
-  },
-  // Connection settings for Render
-  connectionTimeout: 30000, // 30 seconds
-  greetingTimeout: 15000, // 15 seconds
-  socketTimeout: 30000, // 30 seconds
-  // Debug options - uncomment if needed to troubleshoot
-  // debug: true,
-  // logger: true
-});
 
-// Helper function to send email notifications with better error handling
-async function sendEmailNotification(toEmail, subject, message) {
-  try {
-    console.log("📮 Starting email send process...");
-    console.log("📮 EMAIL_USER:", process.env.EMAIL_USER);
-    console.log("📮 EMAIL_PASSWORD exists:", !!process.env.EMAIL_PASSWORD);
-    console.log("📮 Recipient:", toEmail);
+// ✅ Gmail SMTP Port Configurations (will try in order)
+const SMTP_CONFIGS = [
+  {
+    name: "Port 587 (STARTTLS) - Most Compatible",
+    config: {
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+      tls: {
+        ciphers: 'SSLv3',
+        rejectUnauthorized: false
+      },
+      connectionTimeout: 60000,
+      greetingTimeout: 30000,
+      socketTimeout: 60000,
+    }
+  },
+  {
+    name: "Gmail Service (Auto-detect)",
+    config: {
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+      connectionTimeout: 60000,
+      greetingTimeout: 30000,
+      socketTimeout: 60000,
+      pool: true,
+    }
+  },
+  {
+    name: "Port 465 (SSL)",
+    config: {
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+      tls: {
+        rejectUnauthorized: false
+      },
+      connectionTimeout: 60000,
+      greetingTimeout: 30000,
+      socketTimeout: 60000,
+    }
+  },
+  {
+    name: "Port 2525 (Alternative)",
+    config: {
+      host: 'smtp.gmail.com',
+      port: 2525,
+      secure: false,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+      tls: {
+        rejectUnauthorized: false
+      },
+      connectionTimeout: 60000,
+      greetingTimeout: 30000,
+      socketTimeout: 60000,
+    }
+  }
+];
+
+let transporter = null;
+let lastSuccessfulConfig = null;
+
+// ✅ Create transporter with automatic port fallback
+async function createTransporter(forceNew = false) {
+  if (!forceNew && lastSuccessfulConfig) {
+    console.log(`✅ Using last successful config: ${lastSuccessfulConfig.name}`);
+    return nodemailer.createTransport(lastSuccessfulConfig.config);
+  }
+
+  for (let i = 0; i < SMTP_CONFIGS.length; i++) {
+    const smtpConfig = SMTP_CONFIGS[i];
     
-    // Check if we have email credentials
+    try {
+      console.log(`🔧 Trying: ${smtpConfig.name}...`);
+      const testTransporter = nodemailer.createTransport(smtpConfig.config);
+      
+      const verifyPromise = testTransporter.verify();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Verification timeout')), 10000)
+      );
+      
+      await Promise.race([verifyPromise, timeoutPromise]);
+      
+      console.log(`✅ Connected with: ${smtpConfig.name}`);
+      lastSuccessfulConfig = smtpConfig;
+      return testTransporter;
+      
+    } catch (error) {
+      console.log(`❌ ${smtpConfig.name} failed: ${error.message}`);
+      
+      if (i < SMTP_CONFIGS.length - 1) {
+        console.log(`🔄 Trying next configuration...`);
+      }
+    }
+  }
+  
+  console.warn("⚠️ All configs failed verification, using Port 587 as fallback");
+  return nodemailer.createTransport(SMTP_CONFIGS[0].config);
+}
+
+// Initialize on startup
+(async () => {
+  try {
+    transporter = await createTransporter();
+    console.log("✅ Email transporter initialized");
+  } catch (error) {
+    console.error("❌ Transporter init failed:", error.message);
+    transporter = nodemailer.createTransport(SMTP_CONFIGS[0].config);
+  }
+})();
+
+// ✅ Send email with retry and port fallback
+async function sendEmailNotification(toEmail, subject, message, retryCount = 0) {
+  const MAX_RETRIES = 3;
+  
+  try {
+    console.log(`📮 Attempt ${retryCount + 1}/${MAX_RETRIES}`);
+    console.log("📮 Config:", lastSuccessfulConfig?.name || "Default");
+    console.log("📮 To:", toEmail);
+    
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
       console.error("❌ Email credentials not configured!");
-      console.error("EMAIL_USER:", !!process.env.EMAIL_USER);
-      console.error("EMAIL_PASSWORD:", !!process.env.EMAIL_PASSWORD);
       return false;
     }
+
+    if (!transporter) {
+      console.log("🔄 Creating new transporter...");
+      transporter = await createTransporter();
+    }
     
-    // Handle array of recipients
     const recipientEmails = Array.isArray(toEmail) ? toEmail.join(',') : toEmail;
     
     const mailOptions = {
@@ -52,71 +159,99 @@ async function sendEmailNotification(toEmail, subject, message) {
       to: recipientEmails,
       subject: subject,
       html: message,
+      headers: {
+        'X-Priority': '3',
+        'X-Mailer': 'Room Booking System',
+      },
     };
     
-    console.log("📮 Sending email to:", recipientEmails);
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Email notification sent successfully [${info.messageId}]`);
-    return true;
-  } catch (error) {
-    console.error("📮 Error sending email notification:", error);
-    console.error("Error code:", error.code);
-    console.error("Error message:", error.message);
+    const sendPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Send timeout')), 45000)
+    );
     
-    // Provide more detailed error information
+    const info = await Promise.race([sendPromise, timeoutPromise]);
+    
+    console.log(`✅ Email sent! MessageId: ${info.messageId}`);
+    console.log(`✅ Via: ${lastSuccessfulConfig?.name || 'Default'}`);
+    return true;
+    
+  } catch (error) {
+    console.error(`📮 Error attempt ${retryCount + 1}:`, error.message);
+    console.error(`📮 Code:`, error.code);
+    
     if (error.code === 'EAUTH') {
-      console.error("❌ Authentication failed: Check your EMAIL_USER and EMAIL_PASSWORD environment variables");
-    } else if (error.code === 'ESOCKET') {
-      console.error("❌ Network error: Check your internet connection");
-    } else if (error.code === 'EENVELOPE') {
-      console.error("❌ Invalid email address format");
-    } else if (error.code === 'ETIMEDOUT') {
-      console.error("❌ Connection timeout: Email server is not responding");
+      console.error("❌ Auth failed - check EMAIL_USER and EMAIL_PASSWORD");
+      return false;
+    }
+    
+    if (error.code === 'ETIMEDOUT' || error.code === 'ESOCKET' || error.code === 'ECONNECTION') {
+      console.error(`❌ Connection error: ${error.message}`);
+      
+      if (retryCount < MAX_RETRIES - 1) {
+        console.log(`🔄 Trying different SMTP config...`);
+        
+        try {
+          transporter = await createTransporter(true);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          return sendEmailNotification(toEmail, subject, message, retryCount + 1);
+        } catch (createError) {
+          console.error("Failed to create transporter:", createError.message);
+        }
+      } else {
+        console.error(`❌ All configs failed after ${MAX_RETRIES} attempts`);
+        return false;
+      }
+    }
+    
+    if (retryCount < MAX_RETRIES - 1) {
+      const delay = 2000 * (retryCount + 1);
+      console.log(`🔄 Retry in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return sendEmailNotification(toEmail, subject, message, retryCount + 1);
     }
     
     return false;
   }
 }
 
-// ✅ Helper function to send emails asynchronously without blocking the response
+// ✅ Async wrapper
 function sendEmailAsync(toEmail, subject, message) {
-  console.log(`📧 Attempting to send email to:`, toEmail);
-  console.log(`📧 Email subject:`, subject);
+  console.log(`📧 Queuing email to:`, toEmail);
   
-  // Fire and forget - don't wait for email to complete
   sendEmailNotification(toEmail, subject, message)
-    .then(() => {
-      console.log(`✅ Async email sent successfully to:`, toEmail);
+    .then((success) => {
+      if (success) {
+        console.log(`✅ Email delivered to: ${toEmail}`);
+      } else {
+        console.log(`⚠️ Email failed to: ${toEmail}`);
+      }
     })
     .catch((err) => {
-      console.error(`❌ Async email failed for ${toEmail}:`, err);
-      console.error(`❌ Error details:`, err.message, err.stack);
+      console.error(`❌ Email error:`, err.message);
     });
 }
 
-// Helper function to get admin emails
+// Helper: Get admin emails
 async function getAdminEmails() {
   try {
     const admins = await User.find({ role: "Admin" }).select("email");
     return admins.map(admin => admin.email);
   } catch (error) {
     console.error("Error fetching admin emails:", error);
-    // Return a default admin email if configured
     return process.env.DEFAULT_ADMIN_EMAIL ? [process.env.DEFAULT_ADMIN_EMAIL] : [];
   }
 }
 
+// Helper: Remove expired bookings
 async function removeExpiredBookings() {
   try {
     const today = new Date();
-    // today.setHours(0, 0, 0, 0); // Normalize to start of the day
-    
     console.log("⏳ Running Cleanup: Checking for expired bookings...");
     
-    // Convert today to ISO string format (YYYY-MM-DD) to match your date storage format
     const todayStr = today.toISOString().split('T')[0];
-    console.log(todayStr)
-    // Find bookings with dates in the past
+    console.log(todayStr);
+    
     const expiredBookings = await Booking.find({ 
       date: { $lt: todayStr} 
     }).populate("teacher", "name email");
@@ -128,36 +263,27 @@ async function removeExpiredBookings() {
     
     console.log(`🚨 Found ${expiredBookings.length} expired bookings to clean up.`);
     
-    // Process each expired booking
     let cleanupCount = 0;
     for (const booking of expiredBookings) {
       try {
-        // Find the corresponding room
         const room = await Room.findOne({ name: booking.classroom });
         
         if (room) {
-          // Parse the time slot
           const [startTime, endTime] = booking.timeSlot.split("-");
-          
-          // Get the day of week from the booking date
           const bookingDate = new Date(booking.date);
-          const date=bookingDate.toISOString().split('T')[0];
+          const date = bookingDate.toISOString().split('T')[0];
           const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
           const bookingDay = daysOfWeek[bookingDate.getDay()]; 
           
-          // Find the exact schedule entry to remove
           const initialScheduleLength = room.schedule.length;
           
-          // Remove only the specific booking entry from the room schedule
           room.schedule = room.schedule.filter(entry => {
-            // Keep all entries that don't match the exact booking parameters
             return !(
-              entry.date.toISOString().split('T')[0]===date&&
+              entry.date.toISOString().split('T')[0] === date &&
               entry.day === bookingDay && 
               entry.startTime === startTime && 
               entry.endTime === endTime &&
               (
-                // Match any approval status since we're removing expired bookings regardless of status
                 entry.approvalStatus === "pendingApproval" || 
                 entry.approvalStatus === "approved" || 
                 entry.approvalStatus === "granted"
@@ -165,20 +291,16 @@ async function removeExpiredBookings() {
             );
           });
           
-          // Only save if we actually removed something
           if (initialScheduleLength > room.schedule.length) {
             await room.save();
-            console.log(`🧹 Removed expired booking slot from room ${room.name} schedule`);
+            console.log(`🧹 Removed expired booking slot from room ${room.name}`);
           }
         }
         
-        // Delete the expired booking document
-        // await Booking.findByIdAndDelete(booking._id);
         cleanupCount++;
         
       } catch (error) {
         console.error(`Error processing expired booking ${booking._id}:`, error);
-        // Continue with next booking even if this one fails
       }
     }
     
@@ -191,30 +313,57 @@ async function removeExpiredBookings() {
   }
 }
 
-// 📌 Teacher Requests a Booking (Temporarily Block Slot)
+// 📌 TEST EMAIL ROUTE (for debugging)
+router.get("/test-email", authenticateUser, authorizeRole(["Admin", "HOD"]), async (req, res) => {
+  try {
+    const testEmail = req.user.email || process.env.EMAIL_USER;
+    const subject = "Test Email - Room Booking System";
+    const message = `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Email Configuration Test</h2>
+        <p>This is a test email to verify your SMTP configuration.</p>
+        <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+        <p><strong>Config Used:</strong> ${lastSuccessfulConfig?.name || 'Default'}</p>
+        <p>If you received this, your email system is working correctly!</p>
+      </div>
+    `;
+    
+    console.log("\n🧪 Testing email configuration...\n");
+    const result = await sendEmailNotification(testEmail, subject, message);
+    
+    res.json({ 
+      success: result,
+      config: lastSuccessfulConfig?.name || 'Default',
+      message: result ? "Email test passed!" : "Email test failed - check server logs"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// 📌 Teacher Requests a Booking
 router.post("/", authenticateUser, async (req, res) => {
   try {
     console.log("Received booking request:", req.body);
     
     const { roomId, date, day, timeSlot, purpose, subject, faculty, class: classInfo } = req.body;
     
-    // Add debugging to understand the date issue
     console.log("Booking date received:", date);
     console.log("Current date:", new Date().toISOString());
     
-    // More lenient date validation - only block past dates, allow same-day bookings
     if (date) {
       const bookingDate = new Date(date);
       const currentDate = new Date();
       
-      // Strip time components for pure date comparison
       const bookingDateStr = bookingDate.toISOString().split('T')[0];
       const currentDateStr = currentDate.toISOString().split('T')[0];
       
       console.log("Booking date (date only):", bookingDateStr);
       console.log("Current date (date only):", currentDateStr);
       
-      // Only block dates in the past, allow today's date
       if (new Date(bookingDateStr) <= new Date(currentDateStr)) {
         console.log("Rejecting booking: date is in the past");
         return res.status(400).json({ 
@@ -224,13 +373,12 @@ router.post("/", authenticateUser, async (req, res) => {
     }
     
     console.log("Step 1: Checking existing bookings");
-    console.log(req.user)
-    // Check if the slot is already booked
+    
     const existingBooking = await Booking.findOne({
       classroom: roomId,
       date,
       timeSlot,
-      status: { $ne: "Rejected" }, // Ignore rejected bookings
+      status: { $ne: "Rejected" },
     });
     
     if (existingBooking) {
@@ -242,7 +390,7 @@ router.post("/", authenticateUser, async (req, res) => {
       teacher: req.user.id,
       classroom: roomId,
       date,
-      day, // Include the day
+      day,
       timeSlot,
       purpose,
       status: "Pending",
@@ -252,7 +400,6 @@ router.post("/", authenticateUser, async (req, res) => {
     await booking.save();
     console.log("Step 3: Booking saved successfully!");
     
-    // 📌 **TEMPORARILY BLOCK SLOT IN TIMETABLE**
     console.log("Step 4: Updating room schedule temporarily");
     const room = await Room.findOne({ name: roomId });
     
@@ -276,16 +423,14 @@ router.post("/", authenticateUser, async (req, res) => {
       },
       approvalStatus: "pendingApproval",
       date
-      // Assigning booking requester's name
     });
     
     await room.save();
     console.log("Step 6: Room schedule updated successfully");
     
-    // ✅ Send response immediately without waiting for email
     res.status(201).json({ message: "Booking request submitted!", booking });
     
-    // 📧 Send email notification to admin asynchronously (non-blocking)
+    // Send email asynchronously
     const formattedDate = new Date(date).toLocaleDateString();
     getAdminEmails()
       .then(adminEmails => {
@@ -309,15 +454,15 @@ router.post("/", authenticateUser, async (req, res) => {
                 <p><strong>Purpose:</strong> ${purpose}</p>
               </div>
               
-              <p>Please log in to the admin dashboard to approve or reject this request.https://bookingsystem-bay.vercel.app</p>
+              <p>Please log in to the admin dashboard to approve or reject this request.</p>
+              <p><a href="https://bookingsystem-bay.vercel.app" style="display:inline-block;padding:10px 20px;background:#007bff;color:white;text-decoration:none;border-radius:5px;margin-top:10px;">Go to Dashboard</a></p>
               <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
             </div>
           `;
           
-          console.log("📮 Sending email to admins:", adminEmails);
           sendEmailAsync(adminEmails, emailSubject, emailMessage);
         } else {
-          console.log("⚠️ No admin emails found to send notification");
+          console.log("⚠️ No admin emails found");
         }
       })
       .catch(err => console.error("⚠️ Error fetching admin emails:", err));
@@ -327,10 +472,9 @@ router.post("/", authenticateUser, async (req, res) => {
   }
 });
 
-// 📌 Get All Bookings (For Admin & HOD)
+// 📌 Get All Bookings
 router.get("/", authenticateUser, authorizeRole(["Admin", "HOD"]), async (req, res) => {
   try {
-    // await removeExpiredBookings();
     const bookings = await Booking.find().populate("teacher", "name email");
     res.json(bookings);
   } catch (error) {
@@ -348,53 +492,40 @@ router.put("/admin/approve/:id", authenticateUser, authorizeRole(["Admin"]), asy
       return res.status(400).json({ error: "Booking already processed" });
     }
 
-    // **Find the Room**
     const room = await Room.findOne({ name: booking.classroom });
     if (room) {
-      console.log("🏫 Room Before Update:", room);
-
-      // ✅ **Extract Start & End Time from booking**
       const [startTime, endTime] = booking.timeSlot.split("-");
-
-      // ✅ **Convert booking.date to the corresponding day**
       const bookingDate = new Date(booking.date);
-      const date=bookingDate.toISOString().split('T')[0];
-      // console.log(date);
+      const date = bookingDate.toISOString().split('T')[0];
       const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-      const bookingDay = daysOfWeek[bookingDate.getUTCDay()]; // Ensure correct day conversion
+      const bookingDay = daysOfWeek[bookingDate.getUTCDay()];
 
-      // ✅ **Update the Subject in Schedule**
       room.schedule = room.schedule.map((entry) => {
-        if (entry.day === bookingDay && entry.startTime === startTime && entry.endTime === endTime &&entry.date.toISOString().split('T')[0]===date) {
-          // console.log(entry.date);
-          return { ...entry, subject: "Approved by Admin" ,approvalStatus:"approved"}; // Update subject
+        if (entry.day === bookingDay && entry.startTime === startTime && entry.endTime === endTime && entry.date.toISOString().split('T')[0] === date) {
+          return { ...entry, subject: "Approved by Admin", approvalStatus: "approved" };
         }
         return entry;
       });
 
-      console.log("✅ Updated Room Schedule:", room.schedule);
-
       await room.save();
     }
 
-    // ✅ **Update Booking Status**
     booking.status = "Approved by Admin";
     booking.hodStatus = "Pending";
     await booking.save();
 
-    // ✅ Send response immediately
-    res.json({ message: "Booking approved by admin and updated in the schedule", booking });
+    res.json({ message: "Booking approved by admin", booking });
 
-    // 📧 Send notification emails asynchronously (non-blocking)
+    // Send emails
     User.find({ role: "HOD" }).select("email").then(hods => {
       const hodEmails = hods.map(hod => hod.email);
-      console.log("📮 HOD emails:", hodEmails);
       
       if (hodEmails && hodEmails.length > 0) {
-        const bookingDate=new Date(booking.date);
-        const formattedDate = new Date(booking.date).toLocaleDateString();
+        const bookingDate = new Date(booking.date);
+        const formattedDate = bookingDate.toLocaleDateString();
         const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         const bookingDay = daysOfWeek[bookingDate.getUTCDay()];
+        
         const emailSubject = "Booking Approved by Admin - HOD Approval Required";
         const emailMessage = `
           <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
@@ -410,24 +541,20 @@ router.put("/admin/approve/:id", authenticateUser, authorizeRole(["Admin"]), asy
               <p><strong>Purpose:</strong> ${booking.purpose}</p>
             </div>
             
-            <p>Please log in to the HOD dashboard to grant or reject this booking request.https://bookingsystem-bay.vercel.app</p>
-            <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
+            <p>Please log in to the HOD dashboard to grant or reject this booking.</p>
+            <p><a href="https://bookingsystem-bay.vercel.app" style="display:inline-block;padding:10px 20px;background:#007bff;color:white;text-decoration:none;border-radius:5px;margin-top:10px;">Go to Dashboard</a></p>
+            <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message.</p>
           </div>
         `;
         
-        console.log("📮 Sending email to HODs:", hodEmails);
         sendEmailAsync(hodEmails, emailSubject, emailMessage);
-      } else {
-        console.log("⚠️ No HOD emails found");
       }
       
-      // Notify teacher asynchronously
-      console.log("📮 Sending email to teacher:", booking.teacher.email);
       const teacherEmailSubject = "Your Booking Request Approved by Admin";
       const teacherEmailMessage = `
         <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
-          <h2 style="color: #2c3e50;">Your Booking Request Has Been Approved by Admin</h2>
-          <p>Good news! Your booking request has been approved by the admin and is now awaiting HOD approval:</p>
+          <h2 style="color: #2c3e50;">Your Booking Request Approved by Admin</h2>
+          <p>Good news! Your booking request has been approved by the admin:</p>
           
           <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
             <p><strong>Room:</strong> ${booking.classroom}</p>
@@ -438,72 +565,53 @@ router.put("/admin/approve/:id", authenticateUser, authorizeRole(["Admin"]), asy
           </div>
           
           <p>You will be notified once the HOD has made their decision.</p>
-          <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
         </div>
       `;
       
       sendEmailAsync(booking.teacher.email, teacherEmailSubject, teacherEmailMessage);
-    }).catch(err => {
-      console.error("⚠️ Error sending notification emails:", err);
-      console.error("Error details:", err.message, err.stack);
-    });
+    }).catch(err => console.error("⚠️ Error sending emails:", err));
   } catch (error) {
     console.error("🚨 Error Approving Booking:", error.message);
     res.status(500).json({ error: "Server error while approving booking." });
   }
 });
 
-
-// 📌 Admin Rejects Booking (Slot Becomes Available Again)
+// 📌 Admin Rejects Booking
 router.put("/admin/reject/:id", authenticateUser, authorizeRole(["Admin"]), async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id).populate("teacher", "name email");
     if (!booking) return res.status(404).json({ error: "Booking not found" });
 
-    console.log("🔍 Booking Details:", booking);
-
     if (booking.status !== "Pending") {
       return res.status(400).json({ error: "Booking already processed" });
     }
 
-    // **Find the Room**
     const room = await Room.findOne({ name: booking.classroom });
     if (room) {
-      console.log("🏫 Room Before Update:", room);
-
-      // ✅ **Extract Start & End Time from booking**
       const [startTime, endTime] = booking.timeSlot.split("-");
-
-      // ✅ **Convert booking.date to the corresponding day**
       const bookingDate = new Date(booking.date);
-      const date=bookingDate.toISOString().split('T')[0];
+      const date = bookingDate.toISOString().split('T')[0];
       const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-      const bookingDay = daysOfWeek[bookingDate.getUTCDay()]; // Ensure correct day conversion
+      const bookingDay = daysOfWeek[bookingDate.getUTCDay()];
 
-      // ✅ **Filter out the rejected slot**
       room.schedule = room.schedule.filter(
-        (entry) => !(entry.day === bookingDay && entry.startTime === startTime && entry.endTime === endTime&&entry.date.toISOString().split('T')[0]===date)
+        (entry) => !(entry.day === bookingDay && entry.startTime === startTime && entry.endTime === endTime && entry.date.toISOString().split('T')[0] === date)
       );
-
-      console.log("✅ Updated Room Schedule:", room.schedule);
 
       await room.save();
     }
 
-    // ✅ **Update Booking Status**
     booking.status = "Rejected";
     booking.hodStatus = "N/A";
     await booking.save();
 
-    // ✅ Send response immediately
-    res.json({ message: "Booking rejected by admin and slot is now available", booking });
+    res.json({ message: "Booking rejected by admin", booking });
 
-    // 📧 Send notification email asynchronously (non-blocking)
     const emailSubject = "Your Booking Request Has Been Rejected";
     const emailMessage = `
       <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
         <h2 style="color: #e74c3c;">Your Booking Request Has Been Rejected</h2>
-        <p>We regret to inform you that your booking request has been rejected by the admin:</p>
+        <p>We regret to inform you that your booking request has been rejected:</p>
         
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
           <p><strong>Room:</strong> ${booking.classroom}</p>
@@ -512,8 +620,7 @@ router.put("/admin/reject/:id", authenticateUser, authorizeRole(["Admin"]), asyn
           <p><strong>Purpose:</strong> ${booking.purpose}</p>
         </div>
         
-        <p>If you have any questions or need further clarification, please contact the administration.</p>
-        <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
+        <p>If you have questions, please contact the administration.</p>
       </div>
     `;
     
@@ -524,8 +631,7 @@ router.put("/admin/reject/:id", authenticateUser, authorizeRole(["Admin"]), asyn
   }
 });
 
-
-// 📌 HOD Grants Booking (Final Approval)
+// 📌 HOD Grants Booking
 router.put("/hod/grant/:id", authenticateUser, authorizeRole(["HOD"]), async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id).populate("teacher", "name email");
@@ -535,60 +641,49 @@ router.put("/hod/grant/:id", authenticateUser, authorizeRole(["HOD"]), async (re
       return res.status(400).json({ error: "Booking must be approved by admin first" });
     }
 
-    // ✅ Update Booking as Granted
     booking.hodStatus = "Granted";
     await booking.save();
 
-    // ✅ FIND THE ROOM & UPDATE TIMETABLE
     const room = await Room.findOne({ name: booking.classroom });
     if (room) {
-      console.log("🏫 Room Before Update:", room);
-
-      // ✅ Extract start and end time
       const [startTime, endTime] = booking.timeSlot.split("-");
-
-      // ✅ Convert booking.date to weekday
       const bookingDate = new Date(booking.date);
-      const date=bookingDate.toISOString().split('T')[0];
+      const date = bookingDate.toISOString().split('T')[0];
       const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
       const bookingDay = daysOfWeek[bookingDate.getUTCDay()];
 
-      // ✅ Update schedule with final subject and faculty
       room.schedule = room.schedule.map((entry) => {
-        if (entry.day === bookingDay && entry.startTime === startTime && entry.endTime === endTime&&entry.date.toISOString().split('T')[0]===date) {
-          return { ...entry, subject: booking.purpose, faculty: booking.teacher.name,approvalStatus:"granted" }; // Update subject & faculty
+        if (entry.day === bookingDay && entry.startTime === startTime && entry.endTime === endTime && entry.date.toISOString().split('T')[0] === date) {
+          return { ...entry, subject: booking.purpose, faculty: booking.teacher.name, approvalStatus: "granted" };
         }
         return entry;
       });
 
-      console.log("✅ Updated Room Schedule:", room.schedule);
       await room.save();
     }
 
-    // ✅ Send response immediately
-    res.json({ message: "Booking granted by HOD and updated in the schedule", booking });
+    res.json({ message: "Booking granted by HOD", booking });
 
-    // 📧 Send notification email asynchronously (non-blocking)
     const emailSubject = "Your Booking Has Been Granted";
     const bookingDate = new Date(booking.date);
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const bookingDay = daysOfWeek[bookingDate.getUTCDay()];
+    
     const emailMessage = `
       <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
         <h2 style="color: #27ae60;">Your Booking Has Been Granted</h2>
-        <p>Good news! Your booking request has been fully approved and granted:</p>
+        <p>Good news! Your booking request has been fully approved:</p>
         
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
           <p><strong>Room:</strong> ${booking.classroom}</p>
-          <p><strong>Date:</strong> ${new Date(booking.date).toLocaleDateString()}</p>
+          <p><strong>Date:</strong> ${bookingDate.toLocaleDateString()}</p>
           <p><strong>Day:</strong> ${bookingDay}</p>
           <p><strong>Time Slot:</strong> ${booking.timeSlot}</p>
           <p><strong>Purpose:</strong> ${booking.purpose}</p>
           <p><strong>Status:</strong> Granted</p>
         </div>
         
-        <p>The room has been allocated for your use as requested.https://bookingsystem-bay.vercel.app</p>
-        <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
+        <p>The room has been allocated for your use.</p>
       </div>
     `;
     
@@ -599,55 +694,40 @@ router.put("/hod/grant/:id", authenticateUser, authorizeRole(["HOD"]), async (re
   }
 });
 
-
-// 📌 HOD Rejects Booking (Make Slot Available Again)
+// 📌 HOD Rejects Booking
 router.put("/hod/reject/:id", authenticateUser, authorizeRole(["HOD"]), async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id).populate("teacher", "name email");
     if (!booking) return res.status(404).json({ error: "Booking not found" });
 
-    console.log("🔍 Booking Details:", booking);
-
     if (booking.status !== "Approved by Admin") {
       return res.status(400).json({ error: "Booking must be approved by admin first" });
     }
 
-    // **Find the Room**
     const room = await Room.findOne({ name: booking.classroom });
     if (room) {
-      console.log("🏫 Room Before Update:", room);
-
-      // ✅ **Extract Start & End Time from booking**
       const [startTime, endTime] = booking.timeSlot.split("-");
-
-      // ✅ **Convert booking.date to the corresponding day**
       const bookingDate = new Date(booking.date);
-      const date=bookingDate.toISOString().split('T')[0];
+      const date = bookingDate.toISOString().split('T')[0];
       const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-      const bookingDay = daysOfWeek[bookingDate.getUTCDay()]; // Ensure correct day conversion
+      const bookingDay = daysOfWeek[bookingDate.getUTCDay()];
 
-      // ✅ **Filter out the rejected slot**
       room.schedule = room.schedule.filter(
-        (entry) => !(entry.day === bookingDay && entry.startTime === startTime && entry.endTime === endTime&&entry.date.toISOString().split('T')[0]===date)
+        (entry) => !(entry.day === bookingDay && entry.startTime === startTime && entry.endTime === endTime && entry.date.toISOString().split('T')[0] === date)
       );
-
-      console.log("✅ Updated Room Schedule:", room.schedule);
 
       await room.save();
     }
 
-    // ✅ **Update Booking Status**
     booking.hodStatus = "Rejected";
     await booking.save();
 
-    // ✅ Send response immediately
-    res.json({ message: "Booking rejected by HOD and slot is now available", booking });
+    res.json({ message: "Booking rejected by HOD", booking });
 
-    // 📧 Send notification email asynchronously (non-blocking)
     const emailSubject = "Your Booking Request Has Been Rejected by HOD";
     const emailMessage = `
       <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 5px; max-width: 600px;">
-        <h2 style="color: #e74c3c;">Your Booking Request Has Been Rejected by HOD</h2>
+        <h2 style="color: #e74c3c;">Your Booking Request Rejected by HOD</h2>
         <p>We regret to inform you that your booking request has been rejected by the HOD:</p>
         
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
@@ -658,8 +738,7 @@ router.put("/hod/reject/:id", authenticateUser, authorizeRole(["HOD"]), async (r
           <p><strong>Status:</strong> Rejected by HOD</p>
         </div>
         
-        <p>If you have any questions or need further clarification, please contact the department head.</p>
-        <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated message. Please do not reply to this email.</p>
+        <p>If you have questions, please contact the department head.</p>
       </div>
     `;
     
@@ -670,11 +749,9 @@ router.put("/hod/reject/:id", authenticateUser, authorizeRole(["HOD"]), async (r
   }
 });
 
-
-// 📌 Get Bookings for a Teacher (For Teacher Dashboard)
+// 📌 Get Bookings for a Teacher
 router.get("/teacher", authenticateUser, async (req, res) => {
   try {
-    // await removeExpiredBookings();
     const bookings = await Booking.find({ teacher: req.user.id }).populate("teacher", "name email");
     res.json(bookings);
   } catch (error) {
@@ -685,11 +762,9 @@ router.get("/teacher", authenticateUser, async (req, res) => {
 // 📌 Delete All Bookings (HOD only)
 router.delete("/delete-all", authenticateUser, authorizeRole(["HOD"]), async (req, res) => {
   try {
-    // Get all bookings
     const bookings = await Booking.find();
     console.log(`Found ${bookings.length} bookings to delete`);
     
-    // Process each booking to remove from room schedules
     for (const booking of bookings) {
       try {
         const room = await Room.findOne({ name: booking.classroom });
@@ -700,10 +775,8 @@ router.delete("/delete-all", authenticateUser, authorizeRole(["HOD"]), async (re
           const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
           const bookingDay = daysOfWeek[bookingDate.getUTCDay()];
 
-          // Remove only the booking slots that were pending, approved, or granted
           const initialLength = room.schedule.length;
           room.schedule = room.schedule.filter(entry => {
-            // Skip entries without a date
             if (!entry.date) return true;
 
             try {
@@ -721,7 +794,7 @@ router.delete("/delete-all", authenticateUser, authorizeRole(["HOD"]), async (re
               );
             } catch (err) {
               console.error("Error processing schedule entry:", err);
-              return true; // Keep entries that cause errors
+              return true;
             }
           });
 
@@ -732,11 +805,9 @@ router.delete("/delete-all", authenticateUser, authorizeRole(["HOD"]), async (re
         }
       } catch (roomError) {
         console.error(`Error processing room for booking ${booking._id}:`, roomError);
-        // Continue with next booking even if this one fails
       }
     }
 
-    // Delete all bookings from the database
     const deleteResult = await Booking.deleteMany({});
     console.log(`Deleted ${deleteResult.deletedCount} bookings from database`);
 

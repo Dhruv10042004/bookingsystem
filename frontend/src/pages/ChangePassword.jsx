@@ -19,8 +19,8 @@ const ChangePassword = () => {
   const [message, setMessage] = useState({ text: "", type: "" });
 
   // const API = import.meta.env.REACT_APP_API_URL;
-  // const API = "https://bookingsystem-e4oz.onrender.com/api";
-  const API = "http://localhost:5000/api";
+  const API = "https://bookingsystem-e4oz.onrender.com/api";
+  // const API = "http://localhost:5000/api";
   //  const API="https://bookingsystem-iv8l.vercel.app/api"
 
   const handleChangePassword = async (e) => {

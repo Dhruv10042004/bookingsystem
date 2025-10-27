@@ -22,8 +22,8 @@ const ViewTimetable = () => {
   const [currentWeekStart, setCurrentWeekStart] = useState(new Date());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const API = "http://localhost:5000/api";
-
+  // const API = "http://localhost:5000/api";
+  const API = "https://bookingsystem-e4oz.onrender.com/api";
   // dialog/snackbar/edit state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState(null);

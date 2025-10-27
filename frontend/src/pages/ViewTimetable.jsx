@@ -75,7 +75,7 @@ const ViewTimetable = () => {
     // load faculty list and user role
     loadFacultyOptions();
     try {
-      const storedUser = localStorage.getItem("user");
+      const storedUser = user;
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
         if (parsed.user && parsed.user.role) setUserRole(parsed.user.role);

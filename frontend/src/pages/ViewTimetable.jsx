@@ -79,18 +79,18 @@ const ViewTimetable = () => {
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
         if (parsed.user && parsed.user.role) setUserRole(parsed.user.role);
-        else setUserRole(localStorage.getItem("role") || "");
+        else setUserRole(sessionStorage.getItem("role") || "");
       } else {
-        setUserRole(localStorage.getItem("role") || "");
+        setUserRole(sessionStorage.getItem("role") || "");
       }
     } catch (e) {
-      setUserRole(localStorage.getItem("role") || "");
+      setUserRole(sessionStorage.getItem("role") || "");
     }
   }, []);
 
   const loadFacultyOptions = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await axios.get(`${API}/auth/faculty-list`, { headers });
       const list = res.data?.facultyList || [];
@@ -364,7 +364,7 @@ const ViewTimetable = () => {
   // Double-click handler — uses userRole loaded earlier
   const handleCellDoubleClick = (slot) => {
     if (!slot || !slot.entry) return;
-
+    
     if (!userRole || (userRole !== "Admin" && userRole !== "Lab Assistant")) {
       setSnackbar({ open: true, message: "Only Lab Assistants or Admins can edit entries.", severity: "error" });
       return;

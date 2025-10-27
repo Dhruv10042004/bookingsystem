@@ -400,7 +400,7 @@ const ViewTimetable = () => {
     if (!selectedRoom || !selectedEntry) return;
   
     try {
-      const token = localStorage.getItem("user");
+      const token = sessionStorage.getItem("user");
       const parsed = JSON.parse(token);
       console.log(parsed.token)
       if (!user.token) {

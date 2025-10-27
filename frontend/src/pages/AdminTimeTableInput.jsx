@@ -44,9 +44,9 @@ const facultyNames = [
   "Ms. Prahelika Pai (PP)"
 ];
 
-const API="https://bookingsystem-e4oz.onrender.com/api";
-// const API="http://localhost:5000/api";
-//  const API="https://bookingsystem-iv8l.vercel.app/api"
+const API = "https://bookingsystem-e4oz.onrender.com/api";
+// const API = "http://localhost:5000/api";
+
 const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const AdminTimeTableInput = () => {
@@ -59,7 +59,7 @@ const AdminTimeTableInput = () => {
   const [message, setMessage] = useState({ text: "", type: "" });
 
   const parseClassCode = (roomCode) => {
-    if (!roomCode || typeof roomCode !== 'string') return { year: "", division: "" };
+    if (!roomCode || typeof roomCode !== "string") return { year: "", division: "" };
     const trimmedCode = roomCode.trim();
     const regex = /^([A-Z]+)(?:-)?([A-Z0-9]+)?$/;
     const match = trimmedCode.match(regex);
@@ -85,14 +85,14 @@ const AdminTimeTableInput = () => {
         const batch = match[1].trim();
         const subject = match[2].trim();
         const facultyCode = match[3].trim();
-        const isFacultyCode = facultyNames.some(name => name.includes(`(${facultyCode})`));
+        const isFacultyCode = facultyNames.some((name) => name.includes(`(${facultyCode})`));
         if (isFacultyCode) matches.push({ batch, subject, facultyCode });
       }
       if (matches.length >= 2) return matches;
 
       const lastParen = allParens[allParens.length - 1];
-      const lastCode = lastParen.replace(/[()]/g, '');
-      const isLastFaculty = facultyNames.some(name => name.includes(`(${lastCode})`));
+      const lastCode = lastParen.replace(/[()]/g, "");
+      const isLastFaculty = facultyNames.some((name) => name.includes(`(${lastCode})`));
       if (isLastFaculty && matches.length < 2) {
         const beforeLastParen = entryStr.substring(0, entryStr.lastIndexOf(lastParen));
         const classSubjPattern = /\(([^)]+)\)\s*([^\s(]+(?::[^\s(]+)?)/g;
@@ -125,7 +125,7 @@ const AdminTimeTableInput = () => {
   const expandDivisions = (divStr) => {
     if (!divStr || typeof divStr !== "string") return [];
     const cleaned = divStr.replace(/\s+/g, "");
-    if (cleaned.includes('+') || cleaned.includes(',')) {
+    if (cleaned.includes("+") || cleaned.includes(",")) {
       return cleaned.split(/[,+]/).map((d) => d.trim());
     }
     const rangeMatch = cleaned.match(/^([A-Za-z]+)?(\d+)-(\d+)$/);
@@ -177,7 +177,8 @@ const AdminTimeTableInput = () => {
 
   const processExcelFile = async () => {
     if (!file) return setMessage({ text: "Please select a file first", type: "error" });
-    if (!roomName || !roomType || !capacity) return setMessage({ text: "Please complete room details", type: "error" });
+    if (!roomName || !roomType || !capacity)
+      return setMessage({ text: "Please complete room details", type: "error" });
 
     setLoading(true);
     try {
@@ -186,6 +187,7 @@ const AdminTimeTableInput = () => {
       const worksheet = workbook.worksheets[0];
 
       const extractedEntries = [];
+      let failedCount = 0; // 🔹 Track unparseable cells
       let headerRowIndex = -1;
       const dayCols = {};
 
@@ -224,23 +226,22 @@ const AdminTimeTableInput = () => {
 
           let val = cell.value;
 
-          // --------- Robust merged-cell handling (no _merges access) ----------
           if (cell.isMerged) {
             const master = cell.master;
-            // Determine bottom row of vertical merge by walking down
             let endRow = master.row;
-            // Keep moving down while the cell at (endRow+1, master.col) is merged and points to same master
             while (endRow + 1 <= worksheet.rowCount) {
               const nextCell = worksheet.getRow(endRow + 1).getCell(master.col);
-              if (nextCell && nextCell.isMerged && nextCell.master &&
-                  nextCell.master.row === master.row && nextCell.master.col === master.col) {
+              if (
+                nextCell &&
+                nextCell.isMerged &&
+                nextCell.master &&
+                nextCell.master.row === master.row &&
+                nextCell.master.col === master.col
+              ) {
                 endRow += 1;
-              } else {
-                break;
-              }
+              } else break;
             }
 
-            // If merged spans multiple rows, read the time from the bottom row to get the true endTime
             if (endRow !== master.row) {
               const bottomRowTimeVal = worksheet.getRow(endRow).getCell(timeCol).value;
               const bottomRowTime = parseTimeSlot(String(bottomRowTimeVal));
@@ -250,21 +251,21 @@ const AdminTimeTableInput = () => {
             }
 
             val = master.value;
-            // mark all rows in the merged vertical block as processed for this column
             for (let markRow = master.row; markRow <= endRow; markRow++) {
               processedCells.add(`${markRow}-${master.col}`);
             }
-            // also mark current cell position
             processedCells.add(cellKey);
           } else {
             processedCells.add(cellKey);
           }
-          // -------------------------------------------------------------------
 
           if (!val) continue;
 
           const parsed = parseCellEntry(String(val));
-          if (!parsed) continue;
+          if (!parsed) {
+            failedCount++; // 🔹 Count failed entry
+            continue;
+          }
 
           const entries = Array.isArray(parsed) ? parsed : [parsed];
           entries.forEach((p) => {
@@ -290,10 +291,17 @@ const AdminTimeTableInput = () => {
       }
 
       const merged = mergeConsecutiveSlots(extractedEntries);
+
+      // 🔹 Show combined success + warning if any failed entries
+      let textMsg = `✅ Extracted ${extractedEntries.length} entries, merged into ${merged.length}.`;
+      if (failedCount > 0) {
+        textMsg += ` ⚠️ ${failedCount} entries could not be extracted due to incorrect format.`;
+      }
+
       setExtractedData(merged);
       setMessage({
-        text: `✅ Extracted ${extractedEntries.length} entries, merged into ${merged.length}`,
-        type: "success",
+        text: textMsg,
+        type: failedCount > 0 ? "warning" : "success",
       });
     } catch (err) {
       console.error(err);

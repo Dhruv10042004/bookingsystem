@@ -365,7 +365,7 @@ const ViewTimetable = () => {
   const handleCellDoubleClick = (slot) => {
     if (!slot || !slot.entry) return;
     
-    if (!userRole || (userRole !== "Admin" && userRole !== "Lab Assistant")) {
+    if (!user.role || (user.role !== "Admin" && user.role !== "Lab Assistant")) {
       setSnackbar({ open: true, message: "Only Lab Assistants or Admins can edit entries.", severity: "error" });
       return;
     }

@@ -24,7 +24,8 @@ app.use(cors({
   origin: [
     'http://localhost:3000', // Local development
     'https://bookingsystem-bay.vercel.app', // Your Vercel frontend
-    'https://bookingsystem-e4oz.onrender.com' // Your Render backend (for testing)
+    'https://bookingsystem-e4oz.onrender.com',
+    'https://bookingsystem-iv8l-4c1kfp3qu-dhruv10042004s-projects.vercel.app' // Your Render backend (for testing)
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],

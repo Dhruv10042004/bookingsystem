@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import { useAuth } from "../context/AuthContext";
 import { 
   Container, Typography, Paper, Box, Stack, IconButton, 
-  Grid, CircularProgress, Chip, Select, MenuItem, FormControl, InputLabel
+  Grid, CircularProgress, Chip, Select, MenuItem, FormControl, InputLabel,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
+  Snackbar, Alert, Autocomplete
 } from "@mui/material";
 import { 
   ChevronLeft, ChevronRight, CalendarMonth, 
@@ -12,19 +15,36 @@ import Navbar from "../components/Navbar";
 // import PrintTimeTable from "../components/PrintTimeTable";
 
 const ViewTimetable = () => {
+  const { user } = useAuth();
   const [rooms, setRooms] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState("");
   const [roomData, setRoomData] = useState(null);
   const [currentWeekStart, setCurrentWeekStart] = useState(new Date());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const API="https://bookingsystem-e4oz.onrender.com/api"
-  // const API = "http://localhost:5000/api";
+  const API = "http://localhost:5000/api";
+
+  // dialog/snackbar/edit state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [editForm, setEditForm] = useState({
+    subject: "",
+    faculty: [], // array of faculty names
+    year: "",
+    division: ""
+  });
+  const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
+
+  // faculty options from backend
+  const [facultyOptions, setFacultyOptions] = useState([]);
+
+  // user role for edit permission
+  const [userRole, setUserRole] = useState("");
 
   const timeSlots = [
     "08:00-08:30", "08:30-09:00", "09:00-09:30", "09:30-10:00",
     "10:00-10:30", "10:30-11:00", "11:00-11:30", "11:30-12:00",
-    "12:00-12:30", "12:30-01:00", "01:00-1:30", "01:30-02:00",
+    "12:00-12:30", "12:30-01:00", "01:00-01:30", "01:30-02:00",
     "02:00-02:30", "02:30-03:00", "03:00-03:30", "03:30-04:00",
     "04:00-04:30", "04:30-05:00", "05:00-05:30", "05:30-06:00"
   ];
@@ -51,7 +71,37 @@ const ViewTimetable = () => {
     
     fetchRooms();
     adjustToMonday(new Date());
+
+    // load faculty list and user role
+    loadFacultyOptions();
+    try {
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        const parsed = JSON.parse(storedUser);
+        if (parsed.user && parsed.user.role) setUserRole(parsed.user.role);
+        else setUserRole(localStorage.getItem("role") || "");
+      } else {
+        setUserRole(localStorage.getItem("role") || "");
+      }
+    } catch (e) {
+      setUserRole(localStorage.getItem("role") || "");
+    }
   }, []);
+
+  const loadFacultyOptions = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await axios.get(`${API}/auth/faculty-list`, { headers });
+      const list = res.data?.facultyList || [];
+      // map to names (use faculty.name)
+      const names = list.map(f => f.name).filter(Boolean);
+      setFacultyOptions(names);
+    } catch (err) {
+      console.warn("Could not load faculty list:", err);
+      setFacultyOptions([]);
+    }
+  };
 
   const adjustToMonday = (date) => {
     const day = date.getDay();
@@ -125,9 +175,6 @@ const ViewTimetable = () => {
     const [hStr, mStr] = timeStr.split(':');
     let hours = parseInt(hStr, 10);
     const minutes = parseInt(mStr, 10);
-    // Interpret timetable times in 12-hour style without AM/PM.
-    // Morning slots are 08:00–11:30 (8–11). Afternoon slots are written as 12:00, 01:00, 01:30, ...
-    // Map 1–6 to 13–18 so that 12:30–01:00 is treated as 12:30–13:00.
     if (hours >= 1 && hours <= 6) {
       hours += 12;
     }
@@ -151,30 +198,33 @@ const ViewTimetable = () => {
     if (!entry.approvalStatus || entry.approvalStatus === "default") return true;
     if (entry.date) {
       const entryDate = new Date(entry.date);
-      return currentDate.getFullYear() === entryDate.getFullYear() &&
-             currentDate.getMonth() === entryDate.getMonth() &&
-             currentDate.getDate() === entryDate.getDate();
+      const entryDateStr = entryDate.toISOString().split('T')[0];
+      const currentDateStr = currentDate.toISOString().split('T')[0];
+      return entryDateStr === currentDateStr;
     }
     return false;
   };
 
   const findScheduleEntries = (day, timeSlot, dayIndex) => {
     if (!roomData || !roomData.schedule) return [];
-    const [startTimeSlot, endTimeSlot] = timeSlot.split('-');
+    const [startTimeSlot] = timeSlot.split('-');
     const slotStartMinutes = timeToMinutes(startTimeSlot);
-    const slotEndMinutes = timeToMinutes(endTimeSlot);
     const currentDate = getDateForDay(dayIndex);
+
     const matchingEntries = roomData.schedule.filter(entry => {
       if (entry.day !== day) return false;
       const entryStartMinutes = timeToMinutes(entry.startTime);
       const entryEndMinutes = timeToMinutes(entry.endTime);
+
       const hasOverlap = (
         (entryStartMinutes <= slotStartMinutes && entryEndMinutes > slotStartMinutes) ||
-        (entryStartMinutes >= slotStartMinutes && entryStartMinutes < slotEndMinutes)
+        (entryStartMinutes >= slotStartMinutes && entryStartMinutes < slotStartMinutes + 30)
       );
+
       if (!hasOverlap) return false;
       return matchesEntryDate(entry, currentDate);
     });
+
     return matchingEntries;
   };
 
@@ -188,7 +238,7 @@ const ViewTimetable = () => {
     return true;
   };
 
-  // Special merge logic added
+  // Keep your original merge logic unchanged
   const processTimeTable = () => {
     const mergeData = {};
     weekDays.forEach((day, dayIndex) => {
@@ -198,7 +248,7 @@ const ViewTimetable = () => {
         const slot = timeSlots[slotIndex];
         const entries = findScheduleEntries(day, slot, dayIndex);
 
-        // Special merge rules
+        // Special merge rules (unchanged)
         if ((slot === "12:00-12:30" && timeSlots[slotIndex + 1] === "12:30-13:00") ||
             (slot === "12:30-13:00" && timeSlots[slotIndex + 1] === "13:00-13:30")) {
           const nextSlotIndex = slotIndex + 1;
@@ -311,12 +361,114 @@ const ViewTimetable = () => {
     return facultyInfo.fullName;
   };
 
+  // Double-click handler — uses userRole loaded earlier
+  const handleCellDoubleClick = (slot) => {
+    if (!slot || !slot.entry) return;
+
+    if (!userRole || (userRole !== "Admin" && userRole !== "Lab Assistant")) {
+      setSnackbar({ open: true, message: "Only Lab Assistants or Admins can edit entries.", severity: "error" });
+      return;
+    }
+
+    // choose first entry if multiple
+    const entryToEdit = slot.isMultiple && slot.entries && slot.entries.length ? slot.entries[0] : slot.entry;
+
+    setSelectedEntry(entryToEdit);
+    setEditForm({
+      subject: entryToEdit.subject || "",
+      faculty: Array.isArray(entryToEdit.faculty) ? entryToEdit.faculty : (entryToEdit.faculty ? [entryToEdit.faculty] : []),
+      year: entryToEdit.class?.year || "",
+      division: entryToEdit.class?.division || ""
+    });
+
+    // ensure faculty list is loaded (refresh if empty)
+    if (!facultyOptions || facultyOptions.length === 0) loadFacultyOptions();
+
+    setEditDialogOpen(true);
+  };
+
+  const handleEditFormChange = (field, value) => {
+    setEditForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleCloseDialog = () => {
+    setEditDialogOpen(false);
+    setSelectedEntry(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedRoom || !selectedEntry) return;
+  
+    try {
+      const token = localStorage.getItem("user");
+      const parsed = JSON.parse(token);
+      console.log(parsed.token)
+      if (!user.token) {
+        setSnackbar({
+          open: true,
+          message: "Access Denied",
+          severity: "error",
+        });
+        return;
+      }
+  
+      const payload = {
+        subject: editForm.subject,
+        faculty: Array.isArray(editForm.faculty)
+          ? editForm.faculty
+          : editForm.faculty
+          ? [editForm.faculty]
+          : [],
+        class: {
+          year: editForm.year,
+          division: editForm.division,
+        },
+      };
+  
+      // ✅ Correct URL for Lab Assistant logic
+      const updateUrl = `${API}/rooms/${selectedRoom}/schedule/${selectedEntry._id}`;
+  
+      // ✅ Token properly attached
+      await axios.put(updateUrl, payload, {
+        headers: { Authorization: `Bearer ${user.token}` },
+      });
+  
+      setSnackbar({
+        open: true,
+        message: "Timetable entry updated successfully!",
+        severity: "success",
+      });
+      setEditDialogOpen(false);
+      setSelectedEntry(null);
+      fetchRoomData(selectedRoom);
+    } catch (err) {
+      console.error("Error updating timetable entry:", err);
+      setSnackbar({
+        open: true,
+        message: err.response?.data?.error || "Failed to update timetable entry.",
+        severity: "error",
+      });
+    }
+  };
+  
+  
   const renderCellContent = (slot) => {
     if (!slot || !slot.entry) return null;
     const colors = statusColors[slot.entry.approvalStatus || "default"];
+    const canEdit = userRole === "Admin" || userRole === "Lab Assistant";
+
     if (slot.isMultiple && slot.entries.length > 1) {
       return (
-        <Box sx={{ height: '100%', p: 1, backgroundColor: colors.background, color: colors.text, border: `1px solid ${colors.border}`, borderRadius: 1, overflow: 'hidden', fontSize: '0.75rem', display: 'flex', flexDirection: 'column', position: 'relative', width: '100%', minHeight: '100%' }}>
+        <Box
+          onDoubleClick={() => handleCellDoubleClick(slot)}
+          sx={{
+            height: '100%', p: 1, backgroundColor: colors.background, color: colors.text,
+            border: `1px solid ${colors.border}`, borderRadius: 1, overflow: 'hidden',
+            fontSize: '0.75rem', display: 'flex', flexDirection: 'column', position: 'relative',
+            width: '100%', minHeight: '100%',
+            cursor: canEdit ? 'pointer' : 'default'
+          }}
+        >
           {slot.entries.map((entry, index) => (
             <Box key={index} sx={{ mb: index < slot.entries.length - 1 ? 1 : 0 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.3, lineHeight: 1.2, fontSize: '0.75rem' }}>
@@ -333,7 +485,16 @@ const ViewTimetable = () => {
 
     const entry = slot.entry;
     return (
-      <Box sx={{ height: '100%', p: 1, backgroundColor: colors.background, color: colors.text, border: `1px solid ${colors.border}`, borderRadius: 1, overflow: 'hidden', fontSize: '0.75rem', display: 'flex', flexDirection: 'column', position: 'relative', width: '100%', minHeight: '100%' }}>
+      <Box
+        onDoubleClick={() => handleCellDoubleClick(slot)}
+        sx={{
+          height: '100%', p: 1, backgroundColor: colors.background, color: colors.text,
+          border: `1px solid ${colors.border}`, borderRadius: 1, overflow: 'hidden',
+          fontSize: '0.75rem', display: 'flex', flexDirection: 'column', position: 'relative',
+          width: '100%', minHeight: '100%',
+          cursor: canEdit ? 'pointer' : 'default'
+        }}
+      >
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.3, lineHeight: 1.2, fontSize: '0.75rem' }}>
           {formatClassInfo(entry.class) && `(${formatClassInfo(entry.class)}) `}{entry.subject}
         </Typography>
@@ -372,9 +533,9 @@ const ViewTimetable = () => {
                   {rooms.map(room => <MenuItem key={room.name} value={room.name}>{room.name} ({room.type})</MenuItem>)}
                 </Select>
               </FormControl>
-              {/* Print button removed as requested */}
             </Stack>
           </Stack>
+
           {selectedRoom && (
             <Box mb={2}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
@@ -395,8 +556,10 @@ const ViewTimetable = () => {
               </Stack>
             </Box>
           )}
+
           {error && <Typography color="error" sx={{ mt: 1, mb: 2 }} variant="body2">{error}</Typography>}
           {loading && <Box display="flex" justifyContent="center" my={4}><CircularProgress /></Box>}
+
           {selectedRoom && roomData && !loading && (
             <Box sx={{ overflowX: 'auto' }}>
               <Grid container sx={{ minWidth: 1000 }}>
@@ -408,6 +571,7 @@ const ViewTimetable = () => {
                     <Box key={index} sx={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 1, borderBottom: '1px solid #e0e0e0', fontSize: '0.7rem', fontWeight: 'medium' }}>{slot}</Box>
                   ))}
                 </Grid>
+
                 {weekDays.map((day, dayIndex) => {
                   const mergedData = roomData ? processTimeTable()[day] : [];
                   return (
@@ -416,6 +580,7 @@ const ViewTimetable = () => {
                         <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{day}</Typography>
                         <Typography variant="caption">{getDateString(dayIndex)}</Typography>
                       </Box>
+
                       {mergedData.map((slot, slotIndex) => (
                         <Box key={`${day}-${slotIndex}`} sx={{ height: slot.span * 80, p: 0, borderBottom: '1px solid #e0e0e0', backgroundColor: slot.entry ? 'transparent' : 'white', '&:hover': { backgroundColor: slot.entry ? 'transparent' : '#f9f9f9' } }}>
                           {renderCellContent(slot)}
@@ -429,6 +594,54 @@ const ViewTimetable = () => {
           )}
         </Paper>
       </Container>
+
+      {/* Edit Dialog - top 4 fields only (subject, faculty, year, division) */}
+      <Dialog open={editDialogOpen} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Edit Timetable Entry</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+            <TextField
+              label="Subject"
+              value={editForm.subject}
+              onChange={(e) => handleEditFormChange("subject", e.target.value)}
+              fullWidth
+            />
+
+            <Autocomplete
+              multiple
+              options={facultyOptions}
+              value={editForm.faculty}
+              onChange={(event, newValue) => handleEditFormChange("faculty", newValue)}
+              renderInput={(params) => <TextField {...params} label="Faculty (multi-select)" helperText="Select faculty members" />}
+              freeSolo={false}
+              fullWidth
+            />
+
+            <TextField
+              label="Year"
+              value={editForm.year}
+              onChange={(e) => handleEditFormChange("year", e.target.value)}
+              fullWidth
+            />
+
+            <TextField
+              label="Division"
+              value={editForm.division}
+              onChange={(e) => handleEditFormChange("division", e.target.value)}
+              fullWidth
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>Cancel</Button>
+          <Button variant="contained" onClick={handleSaveEdit}>Save Changes</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar */}
+      <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(prev => ({ ...prev, open: false }))} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+        <Alert severity={snackbar.severity} onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}>{snackbar.message}</Alert>
+      </Snackbar>
     </>
   );
 };

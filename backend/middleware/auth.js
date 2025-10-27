@@ -13,12 +13,14 @@ function authenticateUser(req, res, next) {
 
   try {
     if (!process.env.JWT_SECRET) {
+
       console.error("🚨 JWT_SECRET is missing in environment variables.");
       return res.status(500).json({ error: "Server error: Missing JWT secret." });
     }
-
+    console.log(process.env.JWT_SECRET)
     // ✅ Verify the token
     const decodedUser = jwt.verify(token, process.env.JWT_SECRET);
+    console.log(decodedUser)
     console.log("✅ Decoded User:", decodedUser);
 
     if (!decodedUser || !decodedUser.id || !decodedUser.role) {

@@ -64,7 +64,7 @@ router.get("/:roomName/timetable", async (req, res) => {
 router.get("/available", async (req, res) => {
   try {
     const { day, date } = req.query;
-    
+    console.log(day,date);
     if (!day) {
       return res.status(400).json({ error: "Day is required" });
     }
@@ -84,47 +84,71 @@ router.get("/available", async (req, res) => {
     
     const bookedRoomMap = {};
     bookedRooms.forEach(room => {
+      console.log(`\n=== Processing Room: ${room.name} ===`);
+      console.log(`Total schedule entries: ${room.schedule.length}`);
+      
       bookedRoomMap[room.name] = room.schedule
         .filter(sch => {
-          // If it's a default schedule, always include it
-          if (sch.day === day && sch.approvalStatus === "default") {
+          // Must match the day
+          if (sch.day !== day) return false;
+          console.log(`Entry for day ${sch.day}: ${sch.startTime}-${sch.endTime}, status: ${sch.approvalStatus}`);
+          
+          // If it's a default/recurring schedule, always include it
+          if (sch.approvalStatus === "default") {
+            console.log(`  → Including default/recurring entry`);
             return true;
           }
           
-          // If it's a special schedule (non-default status), only include if it's for the requested date
-          if (sch.day === day && sch.approvalStatus !== "default") {
-            // If no specific date requested, don't include special bookings
-            if (!requestDate) return false;
+          // If it's a booking (pending, approved, or granted status)
+          if (sch.approvalStatus !== "default") {
+            console.log(`  → Checking booking entry`);
+            // If no specific date requested, skip bookings (they're specific to a date)
+            if (!requestDate) {
+              console.log(`  → No requestDate, skipping`);
+              return false;
+            }
             
             // Check if the booking date matches the requested date
             if (sch.date) {
               const bookingDate = new Date(sch.date);
               const formattedBookingDate = bookingDate.toISOString().split('T')[0];
-              // console.log(bookingDate)
-              console.log(formattedBookingDate)
-              console.log(formattedRequestDate)
-              return formattedBookingDate === formattedRequestDate;
+              const matches = formattedBookingDate === formattedRequestDate;
+              console.log(`  → Checking date: ${formattedBookingDate} vs ${formattedRequestDate}, Match: ${matches}`);
+              return matches;
             }
             
+            console.log(`  → No date field, skipping`);
             return false;
           }
           
           return false;
         })
-        .map(sch => ({
-          startTime: normalizeTime(sch.startTime),
-          endTime: normalizeTime(sch.endTime),
-          originalStart: sch.startTime,
-          originalEnd: sch.endTime,
-          approvalStatus: sch.approvalStatus
-        }));
+        .map(sch => {
+          const normStart = normalizeTime(sch.startTime);
+          const normEnd = normalizeTime(sch.endTime);
+          console.log(`  Normalizing ${sch.startTime}-${sch.endTime} → ${normStart}-${normEnd} minutes`);
+          return {
+            startTime: normStart,
+            endTime: normEnd,
+            originalStart: sch.startTime,
+            originalEnd: sch.endTime,
+            approvalStatus: sch.approvalStatus
+          };
+        });
+      
+      console.log(`Room ${room.name}: ${bookedRoomMap[room.name].length} booked slots after filtering`);
+      bookedRoomMap[room.name].forEach((slot, idx) => {
+        console.log(`  Slot ${idx + 1}: ${slot.originalStart}-${slot.originalEnd}`);
+      });
     });
     
-    // Define all possible time slots (from 08:00 to 17:30)
+    // Define all possible time slots (matching frontend format: 08:00-08:30, 08:30-09:00, etc.)
     const timeSlots = [
-      "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
-      "11:00", "11:30", "12:00", "12:30", "13:00", "13:30",
-      "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00", "17:30","18:00"
+      "08:00", "08:30", "09:00", "09:30",
+      "10:00", "10:30", "11:00", "11:30",
+      "12:00", "12:30", "01:00", "01:30",
+      "02:00", "02:30", "03:00", "03:30",
+      "04:00", "04:30", "05:00", "05:30", "06:00"
     ];
     
     // Find available slots for each room
@@ -147,7 +171,12 @@ router.get("/available", async (req, res) => {
         
         for (const booking of bookedSlots) {
           // Check if the time ranges overlap
-          if (isOverlapping(normalizedStart, normalizedEnd, booking.startTime, booking.endTime)) {
+          const overlaps = isOverlapping(normalizedStart, normalizedEnd, booking.startTime, booking.endTime);
+          console.log(`  Checking overlap: slot[${slotStart}→${slotEnd}] vs booking[${booking.originalStart}→${booking.originalEnd}] (normalized: ${normalizedStart}-${normalizedEnd} vs ${booking.startTime}-${booking.endTime})`);
+          console.log(`  Overlap result: ${overlaps}`);
+          
+          if (overlaps) {
+            console.log(`✓ Slot ${slotStart}-${slotEnd} overlaps with booked ${booking.originalStart}-${booking.originalEnd}`);
             isBooked = true;
             break;
           }
@@ -160,7 +189,7 @@ router.get("/available", async (req, res) => {
           });
         }
       }
-      
+      console.log(availableSlots);
       // Add room details along with available slots
       availableRooms[room.name] = {
         type: room.type,
@@ -176,16 +205,95 @@ router.get("/available", async (req, res) => {
 });
 
 // Convert time to a number of minutes since midnight for easy comparison
+// Convert time to a number of minutes since midnight for easy comparison
 function normalizeTime(timeStr) {
-  let [hours, minutes] = timeStr.split(':').map(part => parseInt(part, 10));
+  // Handle times in format "HH:MM AM/PM" or "HH:MM"
+  const parts = timeStr.trim().split(' ');
+  const timePart = parts[0];
+  const [hours, minutes] = timePart.split(':').map(part => parseInt(part, 10));
+  const period = parts[1]; // "AM" or "PM" (if exists)
   
-  // Convert afternoon hours (1:00 PM - 5:30 PM) to 24-hour format
-  if (hours >= 1 && hours <= 5) {
-    hours += 12;
+  let hour24 = hours;
+  
+  // If there's an AM/PM indicator
+  if (period) {
+    if (period.toUpperCase() === 'PM' && hours !== 12) {
+      hour24 = hours + 12; // 1 PM = 13:00, 2 PM = 14:00, etc.
+    } else if (period.toUpperCase() === 'AM' && hours === 12) {
+      hour24 = 0; // 12 AM = 00:00
+    }
+  } else {
+    // No AM/PM indicator
+    // Handle times based on your schedule pattern (08:00 to 06:00)
+    // Morning times: 08:00-12:00 (stay as-is)
+    // Afternoon times: 01:00-06:00 (convert to PM by adding 12)
+    
+    if (hours >= 1 && hours <= 7 && hours !== 12) {
+      // Times like 1:00, 2:00, 3:00, 4:00, 5:00, 5:30, 6:00 are PM
+      hour24 = hours + 12; // 4:00 -> 16:00, 6:00 -> 18:00
+    } else if (hours === 12) {
+      // 12:00 stays as 12 (noon)
+      hour24 = 12;
+    }
+    // Hours 8-11 stay as-is (morning: 08:00, 09:00, 10:00, 11:00)
   }
   
-  return hours * 60 + minutes;
+  return hour24 * 60 + (minutes || 0);
 }
+
+// Function to check if two time ranges overlap
+function isOverlapping(start1, end1, start2, end2) {
+  // Two ranges overlap if one starts before the other ends
+  // Example: 
+  // Slot: 5:30-6:00 (17:30-18:00) = 1050-1080 minutes
+  // Booking: 4:00-6:00 PM (16:00-18:00) = 960-1080 minutes
+  // max(1050, 960) = 1050
+  // min(1080, 1080) = 1080
+  // 1050 < 1080 = TRUE (overlaps)
+  
+  return Math.max(start1, start2) < Math.min(end1, end2);
+}
+
+// Example usage and test cases:
+console.log("=== Time Normalization Tests ===");
+console.log("08:00 ->", normalizeTime("08:00"), "minutes (480 = 8:00 AM)");
+console.log("12:00 ->", normalizeTime("12:00"), "minutes (720 = 12:00 PM)");
+console.log("01:00 ->", normalizeTime("01:00"), "minutes (780 = 1:00 PM)");
+console.log("04:00 ->", normalizeTime("04:00"), "minutes (960 = 4:00 PM)");
+console.log("05:30 ->", normalizeTime("05:30"), "minutes (1050 = 5:30 PM)");
+console.log("06:00 ->", normalizeTime("06:00"), "minutes (1080 = 6:00 PM)");
+console.log("04:00 PM ->", normalizeTime("04:00 PM"), "minutes (960 = 4:00 PM)");
+console.log("06:00 PM ->", normalizeTime("06:00 PM"), "minutes (1080 = 6:00 PM)");
+
+console.log("\n=== Overlap Tests ===");
+console.log("Testing: Does 5:30-6:00 overlap with booking 4:00-6:00?");
+console.log("(All times without AM/PM are interpreted as PM for 1:00-6:00 range)\n");
+
+// Test: Does 5:30-6:00 overlap with 4:00-6:00?
+const slot1Start = normalizeTime("05:30"); // Should be 1050 (5:30 PM)
+const slot1End = normalizeTime("06:00");   // Should be 1080 (6:00 PM)
+const booking1Start = normalizeTime("04:00"); // Should be 960 (4:00 PM)
+const booking1End = normalizeTime("06:00");   // Should be 1080 (6:00 PM)
+
+console.log(`Slot 5:30-6:00 → ${slot1Start}-${slot1End} minutes`);
+console.log(`Booking 4:00-6:00 → ${booking1Start}-${booking1End} minutes`);
+console.log(`Overlaps: ${isOverlapping(slot1Start, slot1End, booking1Start, booking1End)} ✓ (SHOULD BE TRUE)`);
+
+// Test: Does 5:00-5:30 overlap with 4:00-6:00?
+console.log("\nTesting: Does 5:00-5:30 overlap with booking 4:00-6:00?");
+const slot2Start = normalizeTime("05:00"); // Should be 1020 (5:00 PM)
+const slot2End = normalizeTime("05:30");   // Should be 1050 (5:30 PM)
+console.log(`Slot 5:00-5:30 → ${slot2Start}-${slot2End} minutes`);
+console.log(`Booking 4:00-6:00 → ${booking1Start}-${booking1End} minutes`);
+console.log(`Overlaps: ${isOverlapping(slot2Start, slot2End, booking1Start, booking1End)} ✓ (SHOULD BE TRUE)`);
+
+// Test: Does 3:30-4:00 overlap with 4:00-6:00?
+console.log("\nTesting: Does 3:30-4:00 overlap with booking 4:00-6:00?");
+const slot3Start = normalizeTime("03:30"); // Should be 930 (3:30 PM)
+const slot3End = normalizeTime("04:00");   // Should be 960 (4:00 PM)
+console.log(`Slot 3:30-4:00 → ${slot3Start}-${slot3End} minutes`);
+console.log(`Booking 4:00-6:00 → ${booking1Start}-${booking1End} minutes`);
+console.log(`Overlaps: ${isOverlapping(slot3Start, slot3End, booking1Start, booking1End)} (SHOULD BE FALSE - slots touch but don't overlap)`);
 
 // Function to check if two time ranges overlap
 function isOverlapping(start1, end1, start2, end2) {
@@ -203,9 +311,11 @@ router.get("/:roomName/available-week", async (req, res) => {
     }
 
     const timeSlots = [
-      "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
-      "11:00", "11:30", "12:00", "12:30", "13:00", "13:30",
-      "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00"
+      "08:00", "08:30", "09:00", "09:30",
+      "10:00", "10:30", "11:00", "11:30",
+      "12:00", "12:30", "01:00", "01:30",
+      "02:00", "02:30", "03:00", "03:30",
+      "04:00", "04:30", "05:00", "05:30", "06:00"
     ];
 
     const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

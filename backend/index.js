@@ -32,11 +32,24 @@ const allowedOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins]));
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true); // allow server-to-server or curl
-    if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
+    console.log('CORS check for origin:', origin);
+    if (!origin) {
+      console.log(' - No origin (server-to-server or curl) -> allow');
+      return callback(null, true);
+    }
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log(' - Origin explicitly allowed ->', origin);
+      return callback(null, true);
+    }
     try {
-      if (origin.endsWith('.vercel.app')) return callback(null, true); // allow dynamic Vercel domains
-    } catch (e) {}
+      if (origin.endsWith('.vercel.app')) {
+        console.log(' - Origin endsWith .vercel.app -> allow', origin);
+        return callback(null, true); // allow dynamic Vercel domains
+      }
+    } catch (e) {
+      console.log(' - Error checking origin.endsWith:', e);
+    }
+    console.log(' - Origin NOT allowed ->', origin);
     return callback(new Error('Not allowed by CORS: ' + origin));
   },
   credentials: true,

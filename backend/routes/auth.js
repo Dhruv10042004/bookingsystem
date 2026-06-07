@@ -15,17 +15,7 @@ const cors = require("cors");
 
 const router = express.Router();
 
-// CORS middleware for auth routes
-router.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'https://bookingsystem-bay.vercel.app',
-    'https://bookingsystem-e4oz.onrender.com'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
-}));
+// CORS handled centrally in index.js. Remove route-level CORS to avoid duplication.
 // Add this RIGHT at the top after your requires
 console.log('=== ENVIRONMENT VARIABLES DEBUG ===');
 console.log('EMAIL_USER:', process.env.EMAIL_USER);

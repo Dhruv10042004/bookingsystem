@@ -20,13 +20,25 @@ const app = express();
 app.use(express.json());
 
 // CORS configuration to allow your Vercel frontend
+// CORS: use env-driven whitelist (comma-separated) with safe defaults
+const rawAllowed = process.env.ALLOWED_ORIGINS || '';
+const envOrigins = rawAllowed.split(',').map(s => s.trim()).filter(Boolean);
+const defaultOrigins = [
+  'http://localhost:3000',
+  'https://bookingsystem-bay.vercel.app',
+  'https://bookingsystem-e4oz.onrender.com'
+];
+const allowedOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins]));
+
 app.use(cors({
-  origin: [
-    'http://localhost:3000', // Local development
-    'https://bookingsystem-bay.vercel.app', // Your Vercel frontend
-    'https://bookingsystem-e4oz.onrender.com',
-    'https://bookingsystem-iv8l-4c1kfp3qu-dhruv10042004s-projects.vercel.app' // Your Render backend (for testing)
-  ],
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true); // allow server-to-server or curl
+    if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
+    try {
+      if (origin.endsWith('.vercel.app')) return callback(null, true); // allow dynamic Vercel domains
+    } catch (e) {}
+    return callback(new Error('Not allowed by CORS: ' + origin));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
@@ -55,6 +67,19 @@ mongoose
 app.use("/api/auth", authRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/rooms",roomsRoutes)
+
+// Debug endpoint: show active CORS allowlist and whether the requester origin is allowed
+app.get('/api/cors', (req, res) => {
+  const origin = req.get('Origin') || null;
+  let allowed = true;
+  if (origin) {
+    allowed = allowedOrigins.indexOf(origin) !== -1;
+    try {
+      if (!allowed && origin.endsWith('.vercel.app')) allowed = true;
+    } catch (e) {}
+  }
+  res.json({ allowedOrigins, requestOrigin: origin, allowed });
+});
 // Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

@@ -30,28 +30,9 @@ const defaultOrigins = [
 ];
 const allowedOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins]));
 
+// TEMPORARY: allow all origins to diagnose frontend CORS issue. Replace with env-driven policy after verification.
 app.use(cors({
-  origin: function (origin, callback) {
-    console.log('CORS check for origin:', origin);
-    if (!origin) {
-      console.log(' - No origin (server-to-server or curl) -> allow');
-      return callback(null, true);
-    }
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      console.log(' - Origin explicitly allowed ->', origin);
-      return callback(null, true);
-    }
-    try {
-      if (origin.endsWith('.vercel.app')) {
-        console.log(' - Origin endsWith .vercel.app -> allow', origin);
-        return callback(null, true); // allow dynamic Vercel domains
-      }
-    } catch (e) {
-      console.log(' - Error checking origin.endsWith:', e);
-    }
-    console.log(' - Origin NOT allowed ->', origin);
-    return callback(new Error('Not allowed by CORS: ' + origin));
-  },
+  origin: true, // echo request origin in Access-Control-Allow-Origin
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],

@@ -6,11 +6,7 @@ import { useAuth } from "../context/AuthContext";
 function Requests() {
   const { user } = useAuth();
   const [bookings, setBookings] = useState([]);
-  // const API=import.meta.env.REACT_APP_API_URL;
-  const API="https://bookingsystem-e4oz.onrender.com/api"
-  // const API="https://bookingsystem-e4oz.onrender.com/api"
-
-  // const API="http://localhost:5000/api"
+  const API=import.meta.env.VITE_API_BASE_URL;
   useEffect(() => {
     if (!user?.token) return; // Ensure token is available
 

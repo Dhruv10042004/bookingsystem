@@ -17,10 +17,7 @@ const facultyNames = [
   "Mr. Suryakant Chaudhari (STC)", "Dr. Gayatri Pandya (GP)", "Dr. Naresh Afre (NAF)", "Mr. Pravin Hole (PH)", 
   "Ms. Leena Sahu (LS)"
 ]
-// const API = import.meta.env.REACT_APP_API_URL;
-const API="https://bookingsystem-e4oz.onrender.com/api"
-//  const API="https://bookingsystem-iv8l.vercel.app/api"
-// const API="http://localhost:5000/api"
+const API=import.meta.env.VITE_API_BASE_URL;
 const daysOrder = { "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6};
 
 function AdminDashboard() {

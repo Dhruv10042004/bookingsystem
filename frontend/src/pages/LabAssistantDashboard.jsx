@@ -32,10 +32,7 @@ function LabAssistantDashboard() {
   const [timetable, setTimetable] = useState([]);
   const [editEntries, setEditEntries] = useState({});
   const navigate = useNavigate();
-  // const API=import.meta.env.REACT_APP_API_URL;
-  const API="https://bookingsystem-e4oz.onrender.com/api"
-  //  const API="https://bookingsystem-iv8l.vercel.app/api"
-  // const API="http://localhost:5000/api"
+  const API=import.meta.env.VITE_API_BASE_URL;
   // Fetch rooms on load
   useEffect(() => {
     axios.get(`${API}/rooms`)

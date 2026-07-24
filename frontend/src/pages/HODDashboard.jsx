@@ -42,10 +42,7 @@ function HODDashboard() {
   const [facultyToUpdate, setFacultyToUpdate] = useState(null);
   const [updateFaculty, setUpdateFaculty] = useState({ name: "", role: "" });
   const [openDeleteAllDialog, setOpenDeleteAllDialog] = useState(false);
-  // const API=import.meta.env.REACT_APP_API_URL;
-  const API="https://bookingsystem-e4oz.onrender.com/api"
-  //  const API="https://bookingsystem-iv8l.vercel.app/api"
-  // const API="http://localhost:5000/api"
+  const API=import.meta.env.VITE_API_BASE_URL;
   useEffect(() => {
     if (!user?.token) return;
 

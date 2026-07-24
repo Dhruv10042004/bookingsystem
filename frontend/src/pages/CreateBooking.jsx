@@ -13,10 +13,7 @@ import Navbar from "../components/Navbar";
 function CreateBooking() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  // const API=import.meta.env.REACT_APP_API_URL;
-  const API="https://bookingsystem-e4oz.onrender.com/api"
-  //  const API="https://bookingsystem-iv8l.vercel.app/api"
-  // const API="http://localhost:5000/api"
+  const API=import.meta.env.VITE_API_BASE_URL;
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState("Monday");
   const [availableRooms, setAvailableRooms] = useState({});

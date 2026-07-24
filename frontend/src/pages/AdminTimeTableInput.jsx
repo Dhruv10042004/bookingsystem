@@ -44,8 +44,7 @@ const facultyNames = [
   "Ms. Prahelika Pai (PP)"
 ];
 
-const API = "https://bookingsystem-e4oz.onrender.com/api";
-// const API = "http://localhost:5000/api";
+const API=import.meta.env.VITE_API_BASE_URL;
 
 const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 

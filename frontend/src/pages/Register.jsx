@@ -16,13 +16,7 @@ function Register() {
   const [error, setError] = useState("");
   const { register } = useAuth();
   const navigate = useNavigate();
-  // const API=import.meta.env.REACT_APP_API_URL
-  // ;
-  const API="https://bookingsystem-e4oz.onrender.com/api"
-  // const API="https://bookingsystem-e4oz.onrender.com/api"
-
-  // const API="http://localhost:5000/api"
-  console.log(API);
+  const API=import.meta.env.VITE_API_BASE_URL;
   useEffect(() => {
     const fetchFacultyList = async () => {
       axios

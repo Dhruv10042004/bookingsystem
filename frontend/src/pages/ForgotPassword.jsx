@@ -14,11 +14,7 @@ const ForgotPassword = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ text: "", type: "" });
 
-  // const API = import.meta.env.REACT_APP_API_URL;
-  const API = "https://bookingsystem-e4oz.onrender.com/api";
-  //  const API="https://bookingsystem-iv8l.vercel.app/api"
-  // const API = "http://localhost:5000/api";
-
+  const API=import.meta.env.VITE_API_BASE_URL;
   const handleForgotPassword = async (e) => {
     e.preventDefault();
     

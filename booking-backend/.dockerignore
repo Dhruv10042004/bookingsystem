@@ -1,0 +1,11 @@
+target/
+.git/
+.idea/
+.vscode/
+*.iml
+.env
+.env.example
+.mvn/
+mvnw
+mvnw.cmd
+README.md
